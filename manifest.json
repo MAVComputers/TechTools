@@ -1,0 +1,12 @@
+{
+  "version": "0.1.0",
+  "files": [
+    "app/MainWindow.xaml",
+    "app/TechTools.Core.ps1",
+    "app/TechTools.ps1",
+    "app/logo.path.txt",
+    "config/categories.json",
+    "config/scripts/internet/_shared.ps1",
+    "config/tools/internet.json"
+  ]
+}

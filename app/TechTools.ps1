@@ -1,0 +1,916 @@
+<#
+  MAV TechTools - main window.
+  Normally started by run.ps1 (the launcher). To run from a clone:
+      powershell -ExecutionPolicy Bypass -File .\app\TechTools.ps1
+  -SmokeTest builds every page without showing the window (used by CI).
+  Keep this file ASCII-only: Windows PowerShell 5.1 reads BOM-less files as ANSI.
+#>
+param(
+    [string]$ConfigRoot = (Split-Path -Parent $PSScriptRoot),
+    [switch]$SmokeTest
+)
+
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+. (Join-Path $PSScriptRoot 'TechTools.Core.ps1')
+
+# ------------------------------------------------------------------ setup ---
+$script:Catalog = Import-TTCatalog -Root $ConfigRoot
+$script:Version = '0.1.0'
+try { $script:Version = [string](Read-TTJson (Join-Path $ConfigRoot 'manifest.json')).version } catch { }
+
+$script:IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$script:LogDir = Join-Path $env:ProgramData 'MAVTechTools\Logs'
+try { New-Item -ItemType Directory -Path $script:LogDir -Force | Out-Null } catch {
+    $script:LogDir = Join-Path $env:LOCALAPPDATA 'MAVTechTools\Logs'
+    New-Item -ItemType Directory -Path $script:LogDir -Force | Out-Null
+}
+$script:LogFile = Join-Path $script:LogDir ((Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + $env:COMPUTERNAME + '.log')
+$script:Sync = New-TTSync -LogFile $script:LogFile
+
+$script:State = @{
+    Page = 'home'; Tab = @{}; Sel = @{}; Choice = @{}; Query = ''
+    NetStatus = $null; NetChecked = 'Not checked yet'; Diag = $null
+    RestartNeeded = $false; RestartWhy = (New-Object System.Collections.ArrayList); RestartScheduled = $false
+}
+$script:SeenVersion = -1
+
+$xamlText = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'MainWindow.xaml'), [System.Text.Encoding]::UTF8)
+$script:Window = [Windows.Markup.XamlReader]::Parse($xamlText)
+$script:UI = @{}
+foreach ($n in @('LogoPath', 'NavPanel', 'PcText', 'AdminChip', 'AdminText', 'VersionText', 'MainScroll', 'PagePanel',
+        'SummaryText', 'OverallBar', 'CancelBtn', 'ClearBtn', 'LogsBtn', 'RestartBanner', 'RestartWhyText',
+        'RestartNowBtn', 'RestartLaterBtn', 'NoJobsText', 'JobList', 'ConsoleList', 'CopyLogBtn')) {
+    $script:UI[$n] = $script:Window.FindName($n)
+}
+$script:ConsoleItems = New-Object System.Collections.ObjectModel.ObservableCollection[object]
+$script:UI.ConsoleList.ItemsSource = $script:ConsoleItems
+
+# ---------------------------------------------------------------- helpers ---
+$script:Colors = @{
+    text = '#E6EDF5'; muted = '#8A99AD'; dim = '#5D6B80'; accent = '#24A7E0'; line = '#1E2A3B'
+    ok = '#34D399'; warn = '#FBBF24'; fail = '#F87171'; idle = '#5D6B80'
+    plain = '#C9D4E3'; info = '#E6EDF5'; step = '#7DD3FC'
+}
+$script:BrushCache = @{}
+function Get-Brush {
+    param([string]$Hex)
+    if (-not $script:BrushCache.ContainsKey($Hex)) {
+        $b = New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString($Hex))
+        $b.Freeze()
+        $script:BrushCache[$Hex] = $b
+    }
+    return $script:BrushCache[$Hex]
+}
+
+function New-Text {
+    param([string]$Text, [double]$Size = 13, [string]$Color = '#E6EDF5', [string]$Weight = 'Normal',
+        [string]$Margin = '0', [switch]$Mono, [switch]$Wrap)
+    $t = New-Object Windows.Controls.TextBlock
+    $t.Text = $Text
+    $t.FontSize = $Size
+    $t.Foreground = Get-Brush $Color
+    $t.FontWeight = [Windows.FontWeights]::$Weight
+    $t.Margin = $Margin
+    if ($Mono) { $t.FontFamily = 'Consolas' }
+    if ($Wrap) { $t.TextWrapping = 'Wrap' }
+    return $t
+}
+
+$script:Icons = @{
+    home    = 'M3,11 L12,4 L21,11 M5,10 L5,20 L19,20 L19,10'
+    windows = 'M3,3 H11 V11 H3 Z M13,3 H21 V11 H13 Z M3,13 H11 V21 H3 Z M13,13 H21 V21 H13 Z'
+    dental  = 'M7,3 C4.5,3 3,5 3,7.5 C3,10.5 4.5,12 5,14.5 C5.5,17.5 6,21 7.5,21 C9,21 9.5,17 12,17 C14.5,17 14,21 15.5,21 C17,21 17.5,17.5 18,14.5 C18.5,12 20,10.5 20,7.5 C20,5 18.5,3 16,3 C14.2,3 13.4,4 12,4 C10.6,4 9.8,3 7,3 Z'
+    eye     = 'M2,12 C5,6 9,5 12,5 C15,5 19,6 22,12 C19,18 15,19 12,19 C9,19 5,18 2,12 Z M9,12 A3,3 0 1 1 15,12 A3,3 0 1 1 9,12 Z'
+    wifi    = 'M2,8.5 A15,15 0 0 1 22,8.5 M5,12 A10,10 0 0 1 19,12 M8.5,15.5 A5,5 0 0 1 15.5,15.5 M11,19 A1,1 0 1 1 13,19 A1,1 0 1 1 11,19'
+    bolt    = 'M13,2 L4,14 L11,14 L10,22 L19,10 L12,10 Z'
+    play    = 'M7,4 L20,12 L7,20 Z'
+    refresh = 'M20,11 A8,8 0 1 0 17.7,16.7 M20,4 L20,11 L13,11'
+    pulse   = 'M3,12 L7,12 L10,4 L14,20 L17,12 L21,12'
+}
+function New-Icon {
+    param([string]$Name, [double]$Size = 16, [string]$Color = '#E6EDF5', [switch]$Fill)
+    $p = New-Object Windows.Shapes.Path
+    try { $p.Data = [Windows.Media.Geometry]::Parse($script:Icons[$Name]) } catch { }
+    if ($Fill) { $p.Fill = Get-Brush $Color } else { $p.Stroke = Get-Brush $Color; $p.StrokeThickness = 1.8 }
+    $p.StrokeLineJoin = 'Round'; $p.StrokeStartLineCap = 'Round'; $p.StrokeEndLineCap = 'Round'
+    $box = New-Object Windows.Controls.Canvas
+    $box.Width = 24; $box.Height = 24
+    [void]$box.Children.Add($p)
+    $vb = New-Object Windows.Controls.Viewbox
+    $vb.Width = $Size; $vb.Height = $Size
+    $vb.Child = $box
+    return $vb
+}
+
+function Get-Cat { param([string]$Id) return ($script:Catalog | Where-Object { $_.Id -eq $Id } | Select-Object -First 1) }
+function Get-CurrentTab {
+    param($Cat)
+    $t = $script:State.Tab[$Cat.Id]
+    if (-not $t) { $t = $Cat.Tabs[0].Id }
+    return $t
+}
+function Test-Picked {
+    param($Cat, $Tool)
+    $key = $Cat.Id + ':' + $Tool.Id
+    if ($Tool.Type -eq 'choice') { $v = $script:State.Choice[$key]; return ($v -and $v -ne 'none') }
+    return [bool]$script:State.Sel[$key]
+}
+
+function Add-ConsoleLine {
+    param([string]$Text, [string]$Tone = 'plain', [string]$Time)
+    if (-not $Time) { $Time = (Get-Date).ToString('HH:mm:ss') }
+    $color = $script:Colors[$Tone]
+    if (-not $color) { $color = $script:Colors.plain }
+    $script:ConsoleItems.Add([pscustomobject]@{ Time = $Time; Text = $Text; Color = $color })
+    while ($script:ConsoleItems.Count -gt 1500) { $script:ConsoleItems.RemoveAt(0) }
+    $script:UI.ConsoleList.ScrollIntoView($script:ConsoleItems[$script:ConsoleItems.Count - 1])
+}
+
+function Add-Jobs {
+    param($Jobs)
+    foreach ($j in @($Jobs)) {
+        [void]$script:Sync.Jobs.Add($j)
+        Add-ConsoleLine ('Queued: ' + $j.Name) 'muted'
+        try { [System.IO.File]::AppendAllText($script:LogFile, ('{0} [queued] {1}{2}' -f (Get-Date).ToString('HH:mm:ss'), $j.Name, [Environment]::NewLine)) } catch { }
+    }
+    $script:Sync.Version++
+}
+
+function Invoke-Tool {
+    param([string]$CatId, [string]$ToolId)
+    $cat = Get-Cat $CatId
+    $tool = $cat.Tools | Where-Object { $_.Id -eq $ToolId } | Select-Object -First 1
+    if ($tool) { Add-Jobs @(New-TTJob -Category $cat -Tool $tool) }
+}
+
+function Test-ToolBusy {
+    param([string]$ToolId)
+    foreach ($j in $script:Sync.Jobs.ToArray()) {
+        if ($j.ToolId -eq $ToolId -and ($j.Status -eq 'queued' -or $j.Status -eq 'running')) { return $true }
+    }
+    return $false
+}
+
+# ------------------------------------------------------------------ pages ---
+function Show-Page {
+    param([string]$Id)
+    $script:State.Page = $Id
+    $script:State.Query = ''
+    Update-Nav
+    Render-Page
+    $script:UI.MainScroll.ScrollToTop()
+    $cat = Get-Cat $Id
+    if ($cat -and $cat.StatusPanel -and $null -eq $script:State.NetStatus -and -not (Test-ToolBusy 'netstatus')) {
+        Invoke-Tool $cat.Id 'netstatus'
+    }
+}
+
+function Update-Nav {
+    foreach ($b in $script:UI.NavPanel.Children) {
+        if ($b.Uid -eq $script:State.Page) { $b.Tag = 'active' } else { $b.Tag = '' }
+    }
+}
+
+function Build-Nav {
+    $items = @([pscustomobject]@{ Id = 'home'; Title = 'Home'; Icon = 'home' }) +
+        @($script:Catalog | ForEach-Object { [pscustomobject]@{ Id = $_.Id; Title = $_.Title; Icon = $_.Icon } })
+    foreach ($it in $items) {
+        $b = New-Object Windows.Controls.Button
+        $b.Style = $script:Window.FindResource('NavBtn')
+        $b.Uid = $it.Id
+        $sp = New-Object Windows.Controls.StackPanel
+        $sp.Orientation = 'Horizontal'
+        $ic = New-Icon -Name $it.Icon -Size 16 -Color '#A9B6C8'
+        $ic.Margin = '0,0,8,0'
+        [void]$sp.Children.Add($ic)
+        [void]$sp.Children.Add((New-Text $it.Title -Weight SemiBold -Color '#E6EDF5'))
+        $b.Content = $sp
+        $b.Add_Click({ Show-Page $this.Uid })
+        [void]$script:UI.NavPanel.Children.Add($b)
+    }
+}
+
+function Render-Page {
+    $script:UI.PagePanel.Children.Clear()
+    $script:TabBadges = @{}
+    $script:SectionCounts = @()
+    $script:StatusHost = $null
+    $script:SectionsHost = $null
+    if ($script:State.Page -eq 'home') { Render-Home } else { Render-Category (Get-Cat $script:State.Page) }
+}
+
+function Add-PageHeader {
+    param([string]$Eyebrow, [string]$Title, [string]$Blurb)
+    $p = $script:UI.PagePanel
+    [void]$p.Children.Add((New-Text $Eyebrow.ToUpper() -Size 11 -Color $script:Colors.accent -Mono))
+    [void]$p.Children.Add((New-Text $Title -Size 30 -Weight SemiBold -Margin '0,6,0,6'))
+    if ($Blurb) { [void]$p.Children.Add((New-Text $Blurb -Size 14 -Color $script:Colors.muted -Wrap -Margin '0,0,0,18')) }
+}
+
+function Render-Home {
+    Add-PageHeader 'Home' 'What are we fixing today?' 'Pick a category to see its tools. Every run shows up in the Action Center on the right.'
+    $wrap = New-Object Windows.Controls.WrapPanel
+    $wrap.Margin = '0,8,0,0'
+    foreach ($cat in $script:Catalog) {
+        $b = New-Object Windows.Controls.Button
+        $b.Style = $script:Window.FindResource('TileBtn')
+        $b.Uid = $cat.Id
+        $sp = New-Object Windows.Controls.StackPanel
+        $iconBox = New-Object Windows.Controls.Border
+        $iconBox.Width = 44; $iconBox.Height = 44; $iconBox.CornerRadius = 10
+        $iconBox.BorderBrush = Get-Brush '#1D5A78'; $iconBox.BorderThickness = 1
+        $iconBox.HorizontalAlignment = 'Left'
+        $iconBox.Child = (New-Icon -Name $cat.Icon -Size 22 -Color $script:Colors.accent)
+        [void]$sp.Children.Add($iconBox)
+        [void]$sp.Children.Add((New-Text $cat.LongTitle -Size 19 -Weight SemiBold -Margin '0,14,0,6'))
+        [void]$sp.Children.Add((New-Text $cat.Tiles -Color $script:Colors.muted -Wrap))
+        if ($cat.ComingSoon) { $foot = 'Coming soon' ; $fc = $script:Colors.dim }
+        else { $foot = ('{0} tools  >' -f @($cat.Tools | Where-Object { -not $_.Hidden }).Count); $fc = $script:Colors.accent }
+        [void]$sp.Children.Add((New-Text $foot -Size 12 -Color $fc -Mono -Margin '0,16,0,0'))
+        $b.Content = $sp
+        $b.Add_Click({ Show-Page $this.Uid })
+        [void]$wrap.Children.Add($b)
+    }
+    [void]$script:UI.PagePanel.Children.Add($wrap)
+    if (-not $script:IsAdmin) {
+        [void]$script:UI.PagePanel.Children.Add((New-Text 'Not running as administrator. Most repairs need admin rights: close this window and start TechTools again with "Run as administrator".' -Color $script:Colors.warn -Wrap -Margin '0,10,0,0'))
+    }
+}
+
+function New-Card {
+    param([double]$Width = 0, [string]$Padding = '16')
+    $c = New-Object Windows.Controls.Border
+    $c.Background = Get-Brush '#0E1520'
+    $c.BorderBrush = Get-Brush $script:Colors.line
+    $c.BorderThickness = 1
+    $c.CornerRadius = 14
+    $c.Padding = $Padding
+    if ($Width -gt 0) { $c.Width = $Width }
+    return $c
+}
+
+function New-Button {
+    param([string]$Text, [string]$Style = 'Btn', [string]$Icon, [string]$IconColor = '#E6EDF5')
+    $b = New-Object Windows.Controls.Button
+    $b.Style = $script:Window.FindResource($Style)
+    if ($Icon) {
+        $sp = New-Object Windows.Controls.StackPanel
+        $sp.Orientation = 'Horizontal'
+        $ic = New-Icon -Name $Icon -Size 14 -Color $IconColor
+        $ic.Margin = '0,0,8,0'
+        [void]$sp.Children.Add($ic)
+        $tb = New-Object Windows.Controls.TextBlock
+        $tb.Text = $Text
+        $tb.VerticalAlignment = 'Center'
+        [void]$sp.Children.Add($tb)
+        $b.Content = $sp
+    } else { $b.Content = $Text }
+    return $b
+}
+
+function Render-Category {
+    param($Cat)
+    Add-PageHeader ('Home / ' + $Cat.Title) $Cat.LongTitle $Cat.Blurb
+    $p = $script:UI.PagePanel
+    if ($Cat.ComingSoon) {
+        $card = New-Card -Padding '22'
+        $sp = New-Object Windows.Controls.StackPanel
+        [void]$sp.Children.Add((New-Text 'Coming soon' -Size 17 -Weight SemiBold))
+        [void]$sp.Children.Add((New-Text ('The ' + $Cat.LongTitle + ' tools are planned (' + $Cat.Tiles + '). This version ships Internet Issues first.') -Color $script:Colors.muted -Wrap -Margin '0,6,0,0'))
+        $card.Child = $sp
+        [void]$p.Children.Add($card)
+        return
+    }
+    $current = Get-CurrentTab $Cat
+
+    # Sub-section tabs
+    if ($Cat.Tabs.Count -gt 1) {
+        $bar = New-Object Windows.Controls.Border
+        $bar.BorderBrush = Get-Brush $script:Colors.line
+        $bar.BorderThickness = '0,0,0,1'
+        $bar.Margin = '0,0,0,18'
+        $tw = New-Object Windows.Controls.WrapPanel
+        foreach ($tab in $Cat.Tabs) {
+            $b = New-Object Windows.Controls.Button
+            $b.Style = $script:Window.FindResource('TabBtn')
+            $b.Uid = $tab.Id
+            $b.Margin = '0,0,0,-1'
+            if ($tab.Id -eq $current) { $b.Tag = 'active' }
+            $sp = New-Object Windows.Controls.StackPanel
+            $sp.Orientation = 'Horizontal'
+            $tt = New-Object Windows.Controls.TextBlock
+            $tt.Text = $tab.Title
+            $tt.VerticalAlignment = 'Center'
+            [void]$sp.Children.Add($tt)
+            $badge = New-Object Windows.Controls.Border
+            $badge.Background = Get-Brush '#0E2A3A'
+            $badge.CornerRadius = 9
+            $badge.Padding = '7,1'
+            $badge.Margin = '8,0,0,0'
+            $badge.Visibility = 'Collapsed'
+            $bt = New-Text '0' -Size 11 -Color $script:Colors.accent -Mono
+            $badge.Child = $bt
+            [void]$sp.Children.Add($badge)
+            $script:TabBadges[$tab.Id] = @{ Border = $badge; Text = $bt }
+            $b.Content = $sp
+            $b.Add_Click({
+                $script:State.Tab[$script:State.Page] = $this.Uid
+                $script:State.Query = ''
+                Render-Page
+            })
+            [void]$tw.Children.Add($b)
+        }
+        $bar.Child = $tw
+        [void]$p.Children.Add($bar)
+    }
+
+    # Live status panel (Internet)
+    if ($Cat.StatusPanel) {
+        $script:StatusHost = New-Object Windows.Controls.StackPanel
+        $script:StatusHost.Margin = '0,0,0,18'
+        [void]$p.Children.Add($script:StatusHost)
+        Render-Status
+    }
+
+    # Quick actions for this tab
+    $quick = @($Cat.Tools | Where-Object { $_.Type -eq 'quick' -and -not $_.Hidden -and $_.Tab -eq $current })
+    if ($quick.Count -gt 0) {
+        [void]$p.Children.Add((New-Text 'QUICK ACTIONS - RUN IMMEDIATELY' -Size 11 -Color $script:Colors.muted -Mono -Margin '0,0,0,8'))
+        $qw = New-Object Windows.Controls.WrapPanel
+        $qw.Margin = '0,0,0,18'
+        foreach ($q in $quick) {
+            $b = New-Object Windows.Controls.Button
+            $b.Style = $script:Window.FindResource('Btn')
+            $b.Padding = '14,8'
+            $b.Margin = '0,0,10,10'
+            $b.Uid = $q.Id
+            if ($q.Info) { $b.ToolTip = $q.Info }
+            $sp = New-Object Windows.Controls.StackPanel
+            $sp.Orientation = 'Horizontal'
+            $ic = New-Icon -Name 'bolt' -Size 16 -Color $script:Colors.accent
+            $ic.Margin = '0,0,10,0'
+            [void]$sp.Children.Add($ic)
+            $tx = New-Object Windows.Controls.StackPanel
+            $label = $q.Label
+            if ($q.Restart) { $label += '  (restart)' }
+            [void]$tx.Children.Add((New-Text $label -Weight SemiBold))
+            if ($q.Cmd) { [void]$tx.Children.Add((New-Text $q.Cmd -Size 11 -Color $script:Colors.muted -Mono)) }
+            [void]$sp.Children.Add($tx)
+            $b.Content = $sp
+            $b.Add_Click({ Invoke-Tool $script:State.Page $this.Uid })
+            [void]$qw.Children.Add($b)
+        }
+        [void]$p.Children.Add($qw)
+    }
+
+    # Toolbar
+    $tb = New-Object Windows.Controls.Border
+    $tb.Background = Get-Brush '#0A1019'
+    $tb.BorderBrush = Get-Brush $script:Colors.line
+    $tb.BorderThickness = 1
+    $tb.CornerRadius = 12
+    $tb.Padding = '10'
+    $tb.Margin = '0,0,0,16'
+    $dock = New-Object Windows.Controls.DockPanel
+    $run = New-Button 'Run selected' -Style 'PrimaryBtn' -Icon 'play' -IconColor '#04121A'
+    $run.Padding = '18,0'
+    $run.Margin = '10,0,0,0'
+    [Windows.Controls.DockPanel]::SetDock($run, 'Right')
+    $run.Add_Click({ Start-Selected })
+    $script:RunBtn = $run
+    [void]$dock.Children.Add($run)
+    $script:SelCountText = New-Text '' -Size 12 -Color $script:Colors.muted -Mono -Margin '10,0,0,0'
+    $script:SelCountText.VerticalAlignment = 'Center'
+    $script:SelCountText.ToolTip = 'Picks are kept when you switch tabs, and run together.'
+    [Windows.Controls.DockPanel]::SetDock($script:SelCountText, 'Right')
+    [void]$dock.Children.Add($script:SelCountText)
+    $def = New-Button 'Select defaults'
+    $def.Margin = '0,0,8,0'
+    $def.Add_Click({ Set-TabSelection -Defaults })
+    [Windows.Controls.DockPanel]::SetDock($def, 'Left')
+    [void]$dock.Children.Add($def)
+    $clr = New-Button 'Clear selection'
+    $clr.Margin = '0,0,8,0'
+    $clr.Add_Click({ Set-TabSelection })
+    [Windows.Controls.DockPanel]::SetDock($clr, 'Left')
+    [void]$dock.Children.Add($clr)
+    $search = New-Object Windows.Controls.TextBox
+    $search.Style = $script:Window.FindResource('SearchBox')
+    $search.Tag = 'Search all ' + $Cat.Title + ' tools'
+    $search.Text = $script:State.Query
+    $search.Add_TextChanged({ $script:State.Query = $this.Text; Render-Sections })
+    [void]$dock.Children.Add($search)
+    $tb.Child = $dock
+    [void]$p.Children.Add($tb)
+
+    $script:SectionsHost = New-Object Windows.Controls.WrapPanel
+    [void]$p.Children.Add($script:SectionsHost)
+    Render-Sections
+}
+
+function Render-Sections {
+    $host_ = $script:SectionsHost
+    if ($null -eq $host_) { return }
+    $host_.Children.Clear()
+    $script:SectionCounts = @()
+    $cat = Get-Cat $script:State.Page
+    $current = Get-CurrentTab $cat
+    $q = ([string]$script:State.Query).Trim().ToLower()
+    $tabTitles = @{}
+    foreach ($t in $cat.Tabs) { $tabTitles[$t.Id] = $t.Title }
+
+    $tools = @($cat.Tools | Where-Object { $_.Type -ne 'quick' -and -not $_.Hidden })
+    if ($q) {
+        $tools = @($tools | Where-Object { ($_.Label + ' ' + $_.Info + ' ' + $_.Cmd + ' ' + $_.Package + ' ' + $_.Section).ToLower().Contains($q) })
+    } else {
+        $tools = @($tools | Where-Object { $_.Tab -eq $current })
+    }
+    if ($tools.Count -eq 0) {
+        $msg = 'Nothing on this tab yet.'
+        if ($q) { $msg = 'No tools match that search.' }
+        [void]$host_.Children.Add((New-Text $msg -Color $script:Colors.muted))
+        Update-Counts
+        return
+    }
+
+    $order = New-Object System.Collections.ArrayList
+    $groups = @{}
+    foreach ($t in $tools) {
+        $name = $t.Section
+        if ($q -and $cat.Tabs.Count -gt 1) { $name = $tabTitles[$t.Tab] + ' - ' + $t.Section }
+        if (-not $groups.ContainsKey($name)) { $groups[$name] = New-Object System.Collections.ArrayList; [void]$order.Add($name) }
+        [void]$groups[$name].Add($t)
+    }
+
+    foreach ($name in $order) {
+        $card = New-Card -Width 380
+        $card.Margin = '0,0,16,16'
+        $card.VerticalAlignment = 'Top'
+        $sp = New-Object Windows.Controls.StackPanel
+        $hd = New-Object Windows.Controls.DockPanel
+        $hd.Margin = '6,0,4,8'
+        $cnt = New-Text '' -Size 11 -Color $script:Colors.muted -Mono
+        $cnt.VerticalAlignment = 'Center'
+        [Windows.Controls.DockPanel]::SetDock($cnt, 'Right')
+        [void]$hd.Children.Add($cnt)
+        [void]$hd.Children.Add((New-Text $name -Size 15 -Weight SemiBold))
+        [void]$sp.Children.Add($hd)
+        $script:SectionCounts += @{ Text = $cnt; Tools = @($groups[$name]) }
+
+        foreach ($t in $groups[$name]) {
+            $key = $cat.Id + ':' + $t.Id
+            if ($t.Type -eq 'choice') {
+                $box = New-Object Windows.Controls.StackPanel
+                $box.Margin = '8,6,8,8'
+                if ($t.Info) { $box.ToolTip = $t.Info }
+                [void]$box.Children.Add((New-Text $t.Label -Margin '0,0,0,6'))
+                $cb = New-Object Windows.Controls.ComboBox
+                $cb.Tag = $key
+                $none = New-Object Windows.Controls.ComboBoxItem
+                $none.Content = 'No change'; $none.Tag = 'none'
+                [void]$cb.Items.Add($none)
+                $sel = 0; $i = 1
+                foreach ($o in $t.Options) {
+                    $it = New-Object Windows.Controls.ComboBoxItem
+                    $it.Content = $o.Label; $it.Tag = $o.Value
+                    [void]$cb.Items.Add($it)
+                    if ($script:State.Choice[$key] -eq $o.Value) { $sel = $i }
+                    $i++
+                }
+                $cb.SelectedIndex = $sel
+                $cb.Add_SelectionChanged({
+                    if ($this.SelectedItem) { $script:State.Choice[[string]$this.Tag] = [string]$this.SelectedItem.Tag }
+                    Update-Counts
+                })
+                [void]$box.Children.Add($cb)
+                [void]$sp.Children.Add($box)
+            } else {
+                $chk = New-Object Windows.Controls.CheckBox
+                $chk.Tag = $key
+                $chk.IsChecked = [bool]$script:State.Sel[$key]
+                if ($t.Info) { $chk.ToolTip = $t.Info }
+                $content = New-Object Windows.Controls.StackPanel
+                $line = New-Object Windows.Controls.WrapPanel
+                [void]$line.Children.Add((New-Text $t.Label -Wrap))
+                if ($t.Restart) {
+                    $chip = New-Object Windows.Controls.Border
+                    $chip.BorderBrush = Get-Brush '#5A4A1F'; $chip.BorderThickness = 1; $chip.CornerRadius = 8
+                    $chip.Padding = '6,0'; $chip.Margin = '8,1,0,0'; $chip.VerticalAlignment = 'Center'
+                    $chip.Child = (New-Text 'RESTART' -Size 9 -Color $script:Colors.warn -Mono)
+                    [void]$line.Children.Add($chip)
+                }
+                [void]$content.Children.Add($line)
+                if ($t.Cmd) { [void]$content.Children.Add((New-Text $t.Cmd -Size 11 -Color $script:Colors.muted -Mono -Wrap -Margin '0,2,0,0')) }
+                $chk.Content = $content
+                $chk.Add_Click({ $script:State.Sel[[string]$this.Tag] = [bool]$this.IsChecked; Update-Counts })
+                [void]$sp.Children.Add($chk)
+            }
+        }
+        $card.Child = $sp
+        [void]$host_.Children.Add($card)
+    }
+    Update-Counts
+}
+
+function Update-Counts {
+    $cat = Get-Cat $script:State.Page
+    if (-not $cat -or $cat.ComingSoon) { return }
+    $total = 0
+    $perTab = @{}
+    foreach ($t in $cat.Tools) {
+        if (Test-Picked $cat $t) { $total++; $perTab[$t.Tab] = 1 + [int]$perTab[$t.Tab] }
+    }
+    foreach ($id in @($script:TabBadges.Keys)) {
+        $n = [int]$perTab[$id]
+        $script:TabBadges[$id].Text.Text = [string]$n
+        if ($n -gt 0) { $script:TabBadges[$id].Border.Visibility = 'Visible' } else { $script:TabBadges[$id].Border.Visibility = 'Collapsed' }
+    }
+    foreach ($sc in $script:SectionCounts) {
+        $picked = @($sc.Tools | Where-Object { Test-Picked $cat $_ }).Count
+        $sc.Text.Text = ('{0}/{1}' -f $picked, @($sc.Tools).Count)
+    }
+    if ($script:SelCountText) { $script:SelCountText.Text = ('{0} selected in {1}' -f $total, $cat.Title) }
+    if ($script:RunBtn) { $script:RunBtn.IsEnabled = ($total -gt 0) }
+}
+
+function Set-TabSelection {
+    param([switch]$Defaults)
+    $cat = Get-Cat $script:State.Page
+    $current = Get-CurrentTab $cat
+    foreach ($t in @($cat.Tools | Where-Object { $_.Tab -eq $current -and $_.Type -ne 'quick' })) {
+        $key = $cat.Id + ':' + $t.Id
+        if ($t.Type -eq 'choice') {
+            if ($Defaults) { $script:State.Choice[$key] = $t.Default } else { $script:State.Choice.Remove($key) }
+        } else {
+            if ($Defaults -and $t.Type -eq 'check') { $script:State.Sel[$key] = [bool]$t.Default } else { $script:State.Sel.Remove($key) }
+        }
+    }
+    Render-Sections
+}
+
+function Start-Selected {
+    $cat = Get-Cat $script:State.Page
+    $jobs = Get-TTSelectionJobs -Category $cat -Sel $script:State.Sel -Choice $script:State.Choice
+    if ($jobs.Count -eq 0) { return }
+    Add-Jobs $jobs
+}
+
+# ---------------------------------------------------- Internet status panel ---
+function Render-Status {
+    $h = $script:StatusHost
+    if ($null -eq $h) { return }
+    $h.Children.Clear()
+    $cat = Get-Cat $script:State.Page
+
+    $card = New-Card -Padding '16'
+    $card.Background = Get-Brush '#0A1019'
+    $sp = New-Object Windows.Controls.StackPanel
+
+    $top = New-Object Windows.Controls.DockPanel
+    $top.Margin = '0,0,0,12'
+    $btns = New-Object Windows.Controls.StackPanel
+    $btns.Orientation = 'Horizontal'
+    [Windows.Controls.DockPanel]::SetDock($btns, 'Right')
+    $busy = (Test-ToolBusy 'netstatus') -or (Test-ToolBusy 'diagnose')
+    $ref = New-Button 'Refresh' -Icon 'refresh'
+    $ref.Margin = '0,0,8,0'
+    $ref.IsEnabled = -not $busy
+    $ref.Add_Click({ Invoke-Tool $script:State.Page 'netstatus'; Render-Status })
+    [void]$btns.Children.Add($ref)
+    $dg = New-Button 'Run full diagnosis' -Icon 'pulse' -IconColor $script:Colors.accent
+    $dg.BorderBrush = Get-Brush $script:Colors.accent
+    $dg.Background = Get-Brush '#0E2A3A'
+    $dg.IsEnabled = -not $busy
+    $dg.Add_Click({ Invoke-Tool $script:State.Page 'diagnose'; Render-Status })
+    [void]$btns.Children.Add($dg)
+    [void]$top.Children.Add($btns)
+    $titles = New-Object Windows.Controls.StackPanel
+    $titles.Orientation = 'Horizontal'
+    [void]$titles.Children.Add((New-Text 'Connection status' -Size 16 -Weight SemiBold))
+    $checked = $script:State.NetChecked
+    if ($busy) { $checked = 'Checking...' }
+    $ct = New-Text $checked -Size 11 -Color $script:Colors.muted -Mono -Margin '12,0,0,0'
+    $ct.VerticalAlignment = 'Center'
+    [void]$titles.Children.Add($ct)
+    [void]$top.Children.Add($titles)
+    [void]$sp.Children.Add($top)
+
+    $grid = New-Object Windows.Controls.WrapPanel
+    foreach ($c in (Get-TTStatusCards $script:State.NetStatus)) {
+        $col = $script:Colors[$c.Level]
+        $b = New-Card -Width 186 -Padding '12'
+        $b.CornerRadius = 10
+        $b.Margin = '0,0,10,10'
+        if ($c.Level -eq 'warn') { $b.BorderBrush = Get-Brush '#5A4A1F' }
+        if ($c.Level -eq 'fail') { $b.BorderBrush = Get-Brush '#5A2626' }
+        $cs = New-Object Windows.Controls.StackPanel
+        $lab = New-Object Windows.Controls.StackPanel
+        $lab.Orientation = 'Horizontal'
+        $dot = New-Object Windows.Shapes.Ellipse
+        $dot.Width = 8; $dot.Height = 8; $dot.Fill = Get-Brush $col; $dot.Margin = '0,0,6,0'; $dot.VerticalAlignment = 'Center'
+        [void]$lab.Children.Add($dot)
+        [void]$lab.Children.Add((New-Text $c.Label.ToUpper() -Size 11 -Color $script:Colors.muted -Mono))
+        [void]$cs.Children.Add($lab)
+        $v = New-Text ([string]$c.Value) -Size 15 -Weight SemiBold -Margin '0,4,0,2'
+        $v.TextTrimming = 'CharacterEllipsis'
+        $v.ToolTip = [string]$c.Value
+        [void]$cs.Children.Add($v)
+        $dcol = $script:Colors.muted
+        if ($c.Level -eq 'warn' -or $c.Level -eq 'fail') { $dcol = $col }
+        $d = New-Text ([string]$c.Detail) -Size 12 -Color $dcol
+        $d.TextTrimming = 'CharacterEllipsis'
+        $d.ToolTip = [string]$c.Detail
+        [void]$cs.Children.Add($d)
+        $b.Child = $cs
+        [void]$grid.Children.Add($b)
+    }
+    [void]$sp.Children.Add($grid)
+
+    $diag = $script:State.Diag
+    if ($diag) {
+        $dc = New-Card -Padding '14'
+        $dc.CornerRadius = 10
+        $dc.Margin = '0,4,0,0'
+        if ($diag.Problems -gt 0) { $dc.BorderBrush = Get-Brush '#5A4A1F' } else { $dc.BorderBrush = Get-Brush '#1F4D3D' }
+        $ds = New-Object Windows.Controls.StackPanel
+        $title = 'Diagnosis: no problems found'
+        if ($diag.Problems -eq 1) { $title = 'Diagnosis: 1 problem found' }
+        elseif ($diag.Problems -gt 1) { $title = ('Diagnosis: {0} problems found' -f $diag.Problems) }
+        $dh = New-Object Windows.Controls.DockPanel
+        $when = New-Text ('Ran ' + $diag.At) -Size 11 -Color $script:Colors.muted -Mono
+        [Windows.Controls.DockPanel]::SetDock($when, 'Right')
+        [void]$dh.Children.Add($when)
+        [void]$dh.Children.Add((New-Text $title -Size 15 -Weight SemiBold))
+        $dh.Margin = '0,0,0,8'
+        [void]$ds.Children.Add($dh)
+        foreach ($f in $diag.Findings) {
+            $row = New-Object Windows.Controls.DockPanel
+            $row.Margin = '0,2,0,2'
+            $mark = [string][char]0x2713
+            if ($f.Level -eq 'warn') { $mark = '!' }
+            if ($f.Level -eq 'fail') { $mark = [string][char]0x2715 }
+            $m = New-Text $mark -Weight Bold -Color $script:Colors[$f.Level] -Mono -Margin '0,0,10,0'
+            $m.Width = 14
+            [Windows.Controls.DockPanel]::SetDock($m, 'Left')
+            [void]$row.Children.Add($m)
+            [void]$row.Children.Add((New-Text $f.Text -Wrap))
+            [void]$ds.Children.Add($row)
+        }
+        if (@($diag.Recommend).Count -gt 0) {
+            $names = @()
+            foreach ($r in $diag.Recommend) {
+                $tool = $cat.Tools | Where-Object { $_.Id -eq $r.Id } | Select-Object -First 1
+                if ($tool) {
+                    $n = $tool.Label
+                    if ($r.Value) { $o = $tool.Options | Where-Object { $_.Value -eq $r.Value } | Select-Object -First 1; if ($o) { $n = 'DNS: ' + $o.Label } }
+                    $names += $n
+                }
+            }
+            $fx = New-Object Windows.Controls.DockPanel
+            $fx.Margin = '0,10,0,0'
+            $apply = New-Button 'Select recommended fixes' -Style 'PrimaryBtn'
+            $apply.Margin = '10,0,0,0'
+            [Windows.Controls.DockPanel]::SetDock($apply, 'Right')
+            $apply.Add_Click({ Select-Recommended })
+            [void]$fx.Children.Add($apply)
+            $rt = New-Text ('Recommended: ' + ($names -join ', ')) -Color '#C9D4E3' -Wrap
+            $rt.VerticalAlignment = 'Center'
+            [void]$fx.Children.Add($rt)
+            [void]$ds.Children.Add($fx)
+        }
+        $dc.Child = $ds
+        [void]$sp.Children.Add($dc)
+    }
+    $card.Child = $sp
+    [void]$h.Children.Add($card)
+}
+
+function Select-Recommended {
+    $cat = Get-Cat $script:State.Page
+    $diag = $script:State.Diag
+    if (-not $diag) { return }
+    $firstTab = $null
+    foreach ($r in $diag.Recommend) {
+        $tool = $cat.Tools | Where-Object { $_.Id -eq $r.Id } | Select-Object -First 1
+        if (-not $tool) { continue }
+        if (-not $firstTab) { $firstTab = $tool.Tab }
+        $key = $cat.Id + ':' + $tool.Id
+        if ($tool.Type -eq 'choice') { $script:State.Choice[$key] = $r.Value } else { $script:State.Sel[$key] = $true }
+    }
+    if ($firstTab) { $script:State.Tab[$cat.Id] = $firstTab }
+    Add-ConsoleLine 'Selected the recommended fixes. Review them, then press Run selected.' 'info'
+    Render-Page
+}
+
+# --------------------------------------------------------- Action Center ---
+function Update-ActionCenter {
+    $jobs = $script:Sync.Jobs.ToArray()
+    $colors = @{ queued = $script:Colors.muted; running = $script:Colors.accent; done = $script:Colors.ok; failed = $script:Colors.fail; cancelled = $script:Colors.dim }
+    $labels = @{ queued = 'Queued'; running = 'Running'; done = 'Done'; failed = 'Failed'; cancelled = 'Cancelled' }
+    $items = New-Object System.Collections.ArrayList
+    for ($i = $jobs.Count - 1; $i -ge 0; $i--) {
+        $j = $jobs[$i]
+        $status = [string]$j.Status
+        $color = $colors[$status]
+        $statusText = $labels[$status]
+        if ($status -eq 'done' -and [int]$j.Warnings -gt 0) { $color = $script:Colors.warn; $statusText = 'Warnings' }
+        switch ($status) {
+            'queued' { $detail = $j.CategoryTitle + '  waiting' }
+            'cancelled' { $detail = $j.CategoryTitle + '  skipped' }
+            'failed' { $detail = [string]$j.Error }
+            'done' { $detail = $j.CategoryTitle + '  finished' }
+            default { $detail = ('{0}  step {1} of {2}: {3}' -f $j.CategoryTitle, [math]::Max(1, [int]$j.Step), $j.Steps, $j.StepText) }
+        }
+        $border = $script:Colors.line
+        if ($status -eq 'running') { $border = '#1D5A78' }
+        [void]$items.Add([pscustomobject]@{
+            Name = $j.Name; Detail = $detail; StatusText = $statusText; Color = $color; Border = $border
+            Percent = [int]$j.Percent; PercentText = ([string][int]$j.Percent + '%')
+        })
+    }
+    $script:UI.JobList.ItemsSource = $items
+    if ($items.Count -gt 0) { $script:UI.NoJobsText.Visibility = 'Collapsed' } else { $script:UI.NoJobsText.Visibility = 'Visible' }
+
+    $live = @($jobs | Where-Object { $_.Status -ne 'cancelled' })
+    $done = @($live | Where-Object { $_.Status -eq 'done' }).Count
+    $failed = @($live | Where-Object { $_.Status -eq 'failed' }).Count
+    if ($live.Count -gt 0) {
+        $sum = 0
+        foreach ($j in $live) { if ($j.Status -eq 'failed') { $sum += 100 } else { $sum += [int]$j.Percent } }
+        $script:UI.OverallBar.Value = [int]($sum / $live.Count)
+        $text = ('{0}/{1} done' -f $done, $live.Count)
+        if ($failed) { $text += (' - {0} failed' -f $failed) }
+        $script:UI.SummaryText.Text = $text
+        if ($failed) { $script:UI.SummaryText.Foreground = Get-Brush $script:Colors.fail } else { $script:UI.SummaryText.Foreground = Get-Brush $script:Colors.muted }
+    } else {
+        $script:UI.OverallBar.Value = 0
+        $script:UI.SummaryText.Text = 'idle'
+        $script:UI.SummaryText.Foreground = Get-Brush $script:Colors.muted
+    }
+}
+
+function Complete-FinishedJobs {
+    $statusChanged = $false
+    foreach ($j in $script:Sync.Jobs.ToArray()) {
+        if ($j.Handled -or ($j.Status -ne 'done' -and $j.Status -ne 'failed')) { continue }
+        $j.Handled = $true
+        if ($j.Status -eq 'done' -and $j.Restart) {
+            $script:State.RestartNeeded = $true
+            if ($script:State.RestartWhy -notcontains $j.Name) { [void]$script:State.RestartWhy.Add($j.Name) }
+            Add-ConsoleLine ('Restart needed to finish: ' + $j.Name) 'warn'
+        }
+        if ($j.Effect -eq 'netstatus' -or $j.Effect -eq 'diagnose') {
+            $statusChanged = $true
+            if ($j.Status -eq 'done' -and $j.Result) {
+                $script:State.NetStatus = $j.Result.Status
+                $script:State.NetChecked = 'Checked ' + (Get-Date).ToString('HH:mm:ss')
+                if ($j.Effect -eq 'diagnose') {
+                    $script:State.Diag = [pscustomobject]@{
+                        At = (Get-Date).ToString('HH:mm:ss'); Findings = @($j.Result.Findings)
+                        Recommend = @($j.Result.Recommend); Problems = @($j.Result.Findings | Where-Object { $_.Level -ne 'ok' }).Count
+                    }
+                }
+            } else { $script:State.NetChecked = 'Last check failed' }
+        }
+    }
+    if ($statusChanged) { Render-Status }
+    Update-RestartBanner
+}
+
+function Update-RestartBanner {
+    if ($script:State.RestartNeeded) {
+        $script:UI.RestartBanner.Visibility = 'Visible'
+        if ($script:State.RestartScheduled) {
+            $script:UI.RestartWhyText.Text = 'Restart scheduled. Windows will restart in about a minute.'
+            $script:UI.RestartNowBtn.Content = 'Cancel restart'
+        } else {
+            $script:UI.RestartWhyText.Text = 'To finish: ' + ($script:State.RestartWhy -join ', ') + '.'
+            $script:UI.RestartNowBtn.Content = 'Restart in 60 s'
+        }
+    } else { $script:UI.RestartBanner.Visibility = 'Collapsed' }
+}
+
+function Invoke-Tick {
+    try {
+        $line = $null
+        $n = 0
+        while ($n -lt 300 -and $script:Sync.Log.TryDequeue([ref]$line)) { Add-ConsoleLine $line.Text $line.Tone $line.Time; $n++ }
+        if ($script:Sync.Version -ne $script:SeenVersion) {
+            $script:SeenVersion = $script:Sync.Version
+            Update-ActionCenter
+            Complete-FinishedJobs
+        }
+    } catch { Add-ConsoleLine ('UI error: ' + $_.Exception.Message) 'fail' }
+}
+
+# ------------------------------------------------------------ wire up UI ---
+try { $script:UI.LogoPath.Data = [Windows.Media.Geometry]::Parse(([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'logo.path.txt'))).Trim()) } catch { }
+$script:UI.VersionText.Text = 'v' + $script:Version
+$os = ''
+try { $os = ((Get-CimInstance -ClassName Win32_OperatingSystem).Caption -replace '^Microsoft\s+', '') } catch { }
+$script:UI.PcText.Text = ($env:COMPUTERNAME + '  ' + $os).Trim()
+if (-not $script:IsAdmin) {
+    $script:UI.AdminText.Text = 'Not admin'
+    $script:UI.AdminText.Foreground = Get-Brush $script:Colors.fail
+    $script:UI.AdminChip.BorderBrush = Get-Brush '#5A2626'
+}
+
+$script:UI.CancelBtn.Add_Click({
+    foreach ($j in $script:Sync.Jobs.ToArray()) { if ($j.Status -eq 'queued') { $j.Status = 'cancelled' } }
+    $script:Sync.Version++
+    Add-ConsoleLine 'Queued actions cancelled' 'muted'
+})
+$script:UI.ClearBtn.Add_Click({
+    foreach ($j in $script:Sync.Jobs.ToArray()) { if ($j.Status -ne 'queued' -and $j.Status -ne 'running') { $script:Sync.Jobs.Remove($j) } }
+    $script:Sync.Version++
+})
+$script:UI.LogsBtn.Add_Click({ Start-Process -FilePath 'explorer.exe' -ArgumentList $script:LogDir })
+$script:UI.CopyLogBtn.Add_Click({
+    $text = ($script:ConsoleItems | ForEach-Object { $_.Time + '  ' + $_.Text }) -join [Environment]::NewLine
+    if ($text) { [Windows.Clipboard]::SetText($text) }
+})
+$script:UI.RestartNowBtn.Add_Click({
+    if ($script:State.RestartScheduled) {
+        & shutdown.exe /a | Out-Null
+        $script:State.RestartScheduled = $false
+        Add-ConsoleLine 'Restart cancelled' 'info'
+    } else {
+        $ans = [Windows.MessageBox]::Show('Restart this PC in 60 seconds? Ask the user to save their work first.', 'MAV TechTools', 'YesNo', 'Warning')
+        if ($ans -ne 'Yes') { return }
+        & shutdown.exe /r /t 60 /c 'Restart started by MAV TechTools' | Out-Null
+        $script:State.RestartScheduled = $true
+        Add-ConsoleLine 'Restart scheduled in 60 seconds' 'warn'
+    }
+    Update-RestartBanner
+})
+$script:UI.RestartLaterBtn.Add_Click({
+    $script:State.RestartNeeded = $false
+    Add-ConsoleLine 'Restart postponed. Remember to restart before closing the ticket.' 'muted'
+    Update-RestartBanner
+})
+
+Build-Nav
+Show-Page 'home'
+Add-ConsoleLine ('MAV TechTools v' + $script:Version + ' on ' + $env:COMPUTERNAME) 'info'
+Add-ConsoleLine ('Log file: ' + $script:LogFile) 'muted'
+if (-not $script:IsAdmin) { Add-ConsoleLine 'Not running as administrator. Most repairs will fail.' 'warn' }
+
+# ------------------------------------------------------------ smoke test ---
+if ($SmokeTest) {
+    $errors = 0
+    foreach ($cat in $script:Catalog) {
+        Show-Page $cat.Id
+        foreach ($tab in $cat.Tabs) { $script:State.Tab[$cat.Id] = $tab.Id; Render-Page }
+        $script:State.Query = 'dns'; Render-Sections; $script:State.Query = ''
+    }
+    $script:State.Page = 'internet'
+    $script:State.NetStatus = [pscustomobject]@{ Adapter = 'Ethernet'; AdapterDetail = 'Test'; IPv4 = '192.168.1.42'; Dhcp = $true; Apipa = $false
+        Gateway = '192.168.1.1'; GatewayMs = 2; GatewayLost = 0; GatewaySent = 4; Dns = @('192.168.1.1'); DnsMs = 380; DnsFailed = 0; DnsTotal = 3
+        InternetMs = 14; InternetOk = $true; HttpOk = $true; CaptivePortal = $false; PublicIp = '203.0.113.24'; ProxyOn = $false; ProxyDetail = '' }
+    $script:State.Diag = [pscustomobject]@{ At = 'now'; Problems = 1
+        Findings = @([pscustomobject]@{ Level = 'ok'; Text = 'ok' }, [pscustomobject]@{ Level = 'warn'; Text = 'slow' })
+        Recommend = @([pscustomobject]@{ Id = 'flushdns'; Value = $null }, [pscustomobject]@{ Id = 'dns'; Value = 'cloudflare' }) }
+    Render-Page
+    Select-Recommended
+    $net = Get-Cat 'internet'
+    if (-not $script:State.Sel['internet:flushdns'] -or $script:State.Choice['internet:dns'] -ne 'cloudflare') { Write-Host 'FAIL recommended fixes not selected'; $errors++ }
+    $jobs = Get-TTSelectionJobs -Category $net -Sel $script:State.Sel -Choice $script:State.Choice
+    $script:Sync.Jobs.Clear()
+    foreach ($j in $jobs) { $j.Status = 'cancelled'; [void]$script:Sync.Jobs.Add($j) }
+    $script:Sync.Version++
+    Invoke-Tick
+    if ($script:UI.JobList.Items.Count -ne $jobs.Count) { Write-Host 'FAIL job list did not render'; $errors++ }
+    $script:Window.Content.Measure((New-Object Windows.Size 1440, 900))
+    $script:Window.Content.Arrange((New-Object Windows.Rect 0, 0, 1440, 900))
+    if ($errors) { exit 1 }
+    Write-Host 'Smoke test passed: every page rendered'
+    exit 0
+}
+
+# ------------------------------------------------------------------- run ---
+# From here on, a problem in one click must not close the whole window.
+$ErrorActionPreference = 'Continue'
+$script:Window.Dispatcher.Add_UnhandledException({
+    param($sender, $e)
+    $e.Handled = $true
+    try { Add-ConsoleLine ('UI error: ' + $e.Exception.Message) 'fail' } catch { }
+})
+$script:Worker = Start-TTWorker -Sync $script:Sync
+$script:Timer = New-Object Windows.Threading.DispatcherTimer
+$script:Timer.Interval = [TimeSpan]::FromMilliseconds(200)
+$script:Timer.Add_Tick({ Invoke-Tick })
+$script:Timer.Start()
+
+$script:Window.Add_Closing({
+    param($sender, $e)
+    $running = @($script:Sync.Jobs.ToArray() | Where-Object { $_.Status -eq 'running' -or $_.Status -eq 'queued' })
+    if ($running.Count -gt 0) {
+        $ans = [Windows.MessageBox]::Show('Actions are still running. Close anyway?', 'MAV TechTools', 'YesNo', 'Warning')
+        if ($ans -ne 'Yes') { $e.Cancel = $true; return }
+    }
+    $script:Timer.Stop()
+    Stop-TTWorker -Worker $script:Worker -Sync $script:Sync
+})
+
+[void]$script:Window.ShowDialog()

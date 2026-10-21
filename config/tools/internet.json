@@ -1,0 +1,529 @@
+{
+  "category": "internet",
+  "sharedFile": "scripts/internet/_shared.ps1",
+  "statusPanel": true,
+  "tabs": [
+    {
+      "id": "fix",
+      "title": "Diagnose & Repair"
+    },
+    {
+      "id": "wifi",
+      "title": "Wi-Fi"
+    },
+    {
+      "id": "tools",
+      "title": "Tools"
+    }
+  ],
+  "tools": [
+    {
+      "id": "netstatus",
+      "type": "quick",
+      "hidden": true,
+      "tab": "fix",
+      "label": "Refresh connection status",
+      "effect": "netstatus",
+      "script": [
+        "Write-Step 'Reading adapter, router, DNS and internet status'",
+        "$s = Get-TTNetSnapshot",
+        "Set-Result ([pscustomobject]@{ Status = $s })"
+      ]
+    },
+    {
+      "id": "diagnose",
+      "type": "quick",
+      "hidden": true,
+      "tab": "fix",
+      "label": "Run full diagnosis",
+      "effect": "diagnose",
+      "script": [
+        "Write-Step 'Checking adapter, router, DNS and internet'",
+        "$s = Get-TTNetSnapshot",
+        "Write-Step 'Building findings'",
+        "$r = Get-TTFindings $s",
+        "foreach ($x in $r.Findings) { Write-Info ('[' + $x.Level.ToUpper() + '] ' + $x.Text) }",
+        "Set-Result ([pscustomobject]@{ Status = $s; Findings = $r.Findings; Recommend = $r.Recommend })"
+      ]
+    },
+    {
+      "id": "quickfix",
+      "type": "quick",
+      "tab": "fix",
+      "label": "Quick fix (flush + renew + Winsock)",
+      "restart": true,
+      "info": "The three most common fixes in one go. Restart afterwards to finish the Winsock reset.",
+      "script": [
+        "Write-Step 'Flushing DNS cache'",
+        "Clear-DnsClientCache",
+        "ipconfig /flushdns",
+        "Write-Step 'Renewing IP address'",
+        "$a = Get-TTActiveAlias",
+        "ipconfig /release \"$a\" | Out-Null",
+        "ipconfig /renew \"$a\" | Out-Null",
+        "Write-Step 'Resetting Winsock'",
+        "netsh winsock reset",
+        "Assert-TTExit 'netsh winsock reset'"
+      ]
+    },
+    {
+      "id": "ipconfig",
+      "type": "quick",
+      "tab": "fix",
+      "label": "Show IP configuration",
+      "cmd": "ipconfig /all",
+      "script": [
+        "Write-Step 'Reading IP configuration'",
+        "ipconfig /all"
+      ]
+    },
+    {
+      "id": "ncpa",
+      "type": "quick",
+      "tab": "fix",
+      "label": "Open Network Connections",
+      "cmd": "ncpa.cpl",
+      "script": [
+        "Write-Step 'Opening Network Connections'",
+        "Start-Process ncpa.cpl"
+      ]
+    },
+    {
+      "id": "flushdns",
+      "type": "check",
+      "tab": "fix",
+      "section": "Network Repair",
+      "label": "Flush DNS cache",
+      "default": true,
+      "cmd": "ipconfig /flushdns",
+      "info": "Clears saved name lookups. Fixes sites that moved or stale DNS records. Safe and instant.",
+      "script": [
+        "Write-Step 'Flushing DNS resolver cache'",
+        "Clear-DnsClientCache",
+        "ipconfig /flushdns",
+        "Assert-TTExit 'ipconfig /flushdns'"
+      ]
+    },
+    {
+      "id": "renew",
+      "type": "check",
+      "tab": "fix",
+      "section": "Network Repair",
+      "label": "Release & renew IP address",
+      "default": true,
+      "cmd": "ipconfig /release; ipconfig /renew",
+      "info": "Asks the router for a fresh address. The connection drops for a few seconds, so remote sessions reconnect.",
+      "script": [
+        "$c = Get-TTActiveNet",
+        "if (-not $c) { throw 'No connected network adapter found.' }",
+        "$a = $c.InterfaceAlias",
+        "$ip = @($c.IPv4Address)[0]",
+        "if ($ip -and [string]$ip.PrefixOrigin -ne 'Dhcp' -and $ip.IPAddress -notlike '169.254.*') { Write-Warn ($a + ' uses a static IP address, so there is nothing to renew.'); return }",
+        "Write-Step ('Releasing the address on ' + $a)",
+        "ipconfig /release \"$a\" | Out-Null",
+        "Write-Step 'Requesting a new address'",
+        "ipconfig /renew \"$a\" | Out-Null",
+        "Assert-TTExit 'ipconfig /renew'",
+        "$new = @((Get-NetIPConfiguration -InterfaceAlias $a).IPv4Address)[0].IPAddress",
+        "Write-Info ('New address: ' + $new)"
+      ]
+    },
+    {
+      "id": "arp",
+      "type": "check",
+      "tab": "fix",
+      "section": "Network Repair",
+      "label": "Clear ARP cache",
+      "cmd": "netsh interface ip delete arpcache",
+      "info": "Forgets saved hardware addresses. Helps after a router or switch is replaced.",
+      "script": [
+        "Write-Step 'Clearing ARP cache'",
+        "netsh interface ip delete arpcache",
+        "Assert-TTExit 'netsh interface ip delete arpcache'"
+      ]
+    },
+    {
+      "id": "adapters",
+      "type": "check",
+      "tab": "fix",
+      "section": "Network Repair",
+      "label": "Restart network adapters",
+      "cmd": "Restart-NetAdapter (physical adapters)",
+      "info": "Turns every physical adapter off and on. Remote sessions drop for a few seconds.",
+      "script": [
+        "Write-Step 'Restarting network adapters'",
+        "$list = @(Get-NetAdapter -Physical | Where-Object { $_.Status -ne 'Disabled' })",
+        "if ($list.Count -eq 0) { throw 'No enabled physical network adapters found.' }",
+        "foreach ($n in $list) { Write-Info ('Restarting ' + $n.Name); Restart-NetAdapter -Name $n.Name -Confirm:$false }",
+        "Write-Step 'Waiting for the connection to come back'",
+        "$deadline = (Get-Date).AddSeconds(25)",
+        "while ((Get-Date) -lt $deadline -and -not (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' })) { Start-Sleep -Seconds 1 }",
+        "if (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' }) { Write-Info 'Connection is back' } else { Write-Warn 'No connection yet. It may need more time, or a cable/Wi-Fi check.' }"
+      ]
+    },
+    {
+      "id": "proxyreset",
+      "type": "check",
+      "tab": "fix",
+      "section": "Network Repair",
+      "label": "Reset proxy settings",
+      "cmd": "netsh winhttp reset proxy; turn off user proxy",
+      "info": "Removes leftover proxy settings from old VPN clients or adware. Browsers may need to be reopened.",
+      "script": [
+        "Write-Step 'Resetting the WinHTTP proxy'",
+        "netsh winhttp reset proxy",
+        "Write-Step 'Turning off the user proxy and auto-config script'",
+        "$k = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'",
+        "Set-ItemProperty -Path $k -Name ProxyEnable -Value 0",
+        "Remove-ItemProperty -Path $k -Name AutoConfigURL -ErrorAction SilentlyContinue",
+        "Write-Info 'Proxy is off. Reopen browsers to pick up the change.'"
+      ]
+    },
+    {
+      "id": "winsock",
+      "type": "check",
+      "tab": "fix",
+      "section": "Network Repair",
+      "label": "Reset Winsock catalog",
+      "restart": true,
+      "cmd": "netsh winsock reset",
+      "info": "Repairs the network layer apps use. Fixes 'connected but nothing loads'. Needs a restart.",
+      "script": [
+        "Write-Step 'Resetting the Winsock catalog'",
+        "netsh winsock reset",
+        "Assert-TTExit 'netsh winsock reset'"
+      ]
+    },
+    {
+      "id": "tcpip",
+      "type": "check",
+      "tab": "fix",
+      "section": "Network Repair",
+      "label": "Reset TCP/IP stack",
+      "restart": true,
+      "cmd": "netsh int ip reset",
+      "info": "Rewrites TCP/IP settings to defaults. Static IP addresses must be entered again. Needs a restart.",
+      "script": [
+        "Write-Step 'Resetting TCP/IP'",
+        "netsh int ip reset",
+        "Assert-TTExit 'netsh int ip reset' -Ok 0,1"
+      ]
+    },
+    {
+      "id": "firewallreset",
+      "type": "check",
+      "tab": "fix",
+      "section": "Network Repair",
+      "label": "Reset Windows Firewall to defaults",
+      "cmd": "netsh advfirewall reset",
+      "info": "Removes ALL custom firewall rules, including ones added for practice software. Use with care.",
+      "script": [
+        "Write-Step 'Resetting Windows Firewall'",
+        "netsh advfirewall reset",
+        "Assert-TTExit 'netsh advfirewall reset'"
+      ]
+    },
+    {
+      "id": "dns",
+      "type": "choice",
+      "tab": "fix",
+      "section": "DNS & Hosts",
+      "label": "DNS servers for the active adapter",
+      "info": "Switch away from slow or broken router DNS. Automatic puts it back.",
+      "options": [
+        {
+          "value": "dhcp",
+          "label": "Automatic (from router)",
+          "script": [
+            "Write-Step 'Setting DNS back to automatic (from the router)'",
+            "$a = Get-TTActiveAlias",
+            "Set-DnsClientServerAddress -InterfaceAlias $a -ResetServerAddresses",
+            "Clear-DnsClientCache",
+            "Write-Info ('DNS on ' + $a + ' now comes from the router')"
+          ]
+        },
+        {
+          "value": "cloudflare",
+          "label": "Cloudflare (1.1.1.1)",
+          "script": [
+            "Write-Step 'Setting DNS servers to Cloudflare (1.1.1.1)'",
+            "$a = Get-TTActiveAlias",
+            "Set-DnsClientServerAddress -InterfaceAlias $a -ServerAddresses @('1.1.1.1', '1.0.0.1')",
+            "Clear-DnsClientCache",
+            "Write-Info ('DNS on ' + $a + ' is now 1.1.1.1, 1.0.0.1')"
+          ]
+        },
+        {
+          "value": "google",
+          "label": "Google (8.8.8.8)",
+          "script": [
+            "Write-Step 'Setting DNS servers to Google (8.8.8.8)'",
+            "$a = Get-TTActiveAlias",
+            "Set-DnsClientServerAddress -InterfaceAlias $a -ServerAddresses @('8.8.8.8', '8.8.4.4')",
+            "Clear-DnsClientCache",
+            "Write-Info ('DNS on ' + $a + ' is now 8.8.8.8, 8.8.4.4')"
+          ]
+        },
+        {
+          "value": "quad9",
+          "label": "Quad9 (9.9.9.9)",
+          "script": [
+            "Write-Step 'Setting DNS servers to Quad9 (9.9.9.9)'",
+            "$a = Get-TTActiveAlias",
+            "Set-DnsClientServerAddress -InterfaceAlias $a -ServerAddresses @('9.9.9.9', '149.112.112.112')",
+            "Clear-DnsClientCache",
+            "Write-Info ('DNS on ' + $a + ' is now 9.9.9.9, 149.112.112.112')"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dnstest",
+      "type": "check",
+      "tab": "fix",
+      "section": "DNS & Hosts",
+      "label": "Test DNS resolution",
+      "default": true,
+      "cmd": "Resolve-DnsName (3 well-known names)",
+      "info": "Looks up a few well-known names and times the answers.",
+      "script": [
+        "Write-Step 'Testing DNS lookups'",
+        "$d = Measure-TTDns",
+        "Write-Info ('{0} of {1} lookups answered, average {2} ms' -f ($d.Total - $d.Failed), $d.Total, $d.AvgMs)",
+        "if ($d.Failed -ge $d.Total) { throw 'All DNS lookups failed.' }",
+        "if ($d.AvgMs -gt 250) { Write-Warn 'DNS is slow. Try switching DNS servers.' }"
+      ]
+    },
+    {
+      "id": "hostsreset",
+      "type": "check",
+      "tab": "fix",
+      "section": "DNS & Hosts",
+      "label": "Reset hosts file to default",
+      "cmd": "back up hosts, write default",
+      "info": "Removes blocking or redirect entries. The old file is kept as a backup next to it.",
+      "script": [
+        "Write-Step 'Backing up the hosts file'",
+        "$h = Join-Path $env:SystemRoot 'System32\\drivers\\etc\\hosts'",
+        "if (Test-Path $h) { $bak = $h + '.mav-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.bak'; Copy-Item -Path $h -Destination $bak -Force; Write-Info ('Backup: ' + $bak) }",
+        "Write-Step 'Writing the default hosts file'",
+        "$default = @('# Copyright (c) 1993-2009 Microsoft Corp.', '#', '# This is a sample HOSTS file used by Microsoft TCP/IP for Windows.', '#', '# localhost name resolution is handled within DNS itself.', '#    127.0.0.1       localhost', '#    ::1             localhost')",
+        "[System.IO.File]::WriteAllLines($h, [string[]]$default)",
+        "Clear-DnsClientCache",
+        "Write-Info 'Hosts file reset'"
+      ]
+    },
+    {
+      "id": "wlaninfo",
+      "type": "quick",
+      "tab": "wifi",
+      "label": "Show Wi-Fi signal and details",
+      "cmd": "netsh wlan show interfaces",
+      "script": [
+        "Write-Step 'Reading Wi-Fi details'",
+        "netsh wlan show interfaces"
+      ]
+    },
+    {
+      "id": "wlansvc",
+      "type": "check",
+      "tab": "wifi",
+      "section": "Wi-Fi",
+      "label": "Restart WLAN AutoConfig service",
+      "cmd": "Restart-Service WlanSvc",
+      "info": "Fixes Wi-Fi that shows no networks or will not connect.",
+      "script": [
+        "Write-Step 'Restarting WLAN AutoConfig'",
+        "if (-not (Get-Service -Name WlanSvc -ErrorAction SilentlyContinue)) { throw 'This PC has no Wi-Fi service (no wireless adapter).' }",
+        "Restart-Service -Name WlanSvc -Force",
+        "Write-Info ('WlanSvc is ' + (Get-Service -Name WlanSvc).Status)"
+      ]
+    },
+    {
+      "id": "wlanreport",
+      "type": "check",
+      "tab": "wifi",
+      "section": "Wi-Fi",
+      "label": "Generate Wi-Fi report",
+      "cmd": "netsh wlan show wlanreport",
+      "info": "Three days of Wi-Fi drops and errors as an HTML report. Opens when done.",
+      "script": [
+        "Write-Step 'Building the Wi-Fi report'",
+        "netsh wlan show wlanreport | Out-Null",
+        "Assert-TTExit 'netsh wlan show wlanreport'",
+        "$p = Join-Path $env:ProgramData 'Microsoft\\Windows\\WlanReport\\wlan-report-latest.html'",
+        "if (-not (Test-Path $p)) { throw 'The report was not created.' }",
+        "Start-Process $p",
+        "Write-Info ('Opened ' + $p)"
+      ]
+    },
+    {
+      "id": "wlanprofiles",
+      "type": "check",
+      "tab": "wifi",
+      "section": "Wi-Fi",
+      "label": "Show saved Wi-Fi networks",
+      "cmd": "netsh wlan show profiles",
+      "script": [
+        "Write-Step 'Listing saved Wi-Fi networks'",
+        "$names = @(netsh wlan show profiles | ForEach-Object { if ($_ -match ':\\s*(.+)$' -and $_ -match 'Profile') { $Matches[1].Trim() } })",
+        "if ($names.Count -eq 0) { Write-Info 'No saved Wi-Fi networks.' } else { foreach ($n in $names) { Write-Info $n } }"
+      ]
+    },
+    {
+      "id": "wlanforget",
+      "type": "check",
+      "tab": "wifi",
+      "section": "Wi-Fi",
+      "label": "Forget current Wi-Fi network",
+      "cmd": "netsh wlan delete profile name=<current SSID>",
+      "info": "The user will need the Wi-Fi password to reconnect.",
+      "script": [
+        "Write-Step 'Finding the current Wi-Fi network'",
+        "$ssid = $null",
+        "foreach ($l in (netsh wlan show interfaces)) { if ($l -match '^\\s+SSID\\s+:\\s*(.+)$') { $ssid = $Matches[1].Trim(); break } }",
+        "if (-not $ssid) { throw 'This PC is not connected to Wi-Fi.' }",
+        "Write-Step ('Forgetting ' + $ssid)",
+        "netsh wlan delete profile \"name=$ssid\"",
+        "Assert-TTExit 'netsh wlan delete profile'"
+      ]
+    },
+    {
+      "id": "speedtest",
+      "type": "quick",
+      "tab": "tools",
+      "label": "Run speed test",
+      "cmd": "speedtest (Ookla CLI)",
+      "script": [
+        "Write-Step 'Finding Speedtest CLI'",
+        "$exe = $null",
+        "$cmd = Get-Command speedtest.exe -ErrorAction SilentlyContinue",
+        "if ($cmd) { $exe = $cmd.Source }",
+        "if (-not $exe) { foreach ($dir in @((Join-Path $env:LOCALAPPDATA 'Microsoft\\WinGet'), (Join-Path $env:ProgramFiles 'WinGet'))) { if (-not $exe -and (Test-Path $dir)) { $exe = Get-ChildItem -Path $dir -Recurse -Filter speedtest.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName } } }",
+        "if (-not $exe) { throw 'Speedtest CLI is not installed. Check it under Install tools and run it first.' }",
+        "Write-Step 'Running speed test (about 30 seconds)'",
+        "& $exe --accept-license --accept-gdpr",
+        "Assert-TTExit 'speedtest'"
+      ]
+    },
+    {
+      "id": "pinggw",
+      "type": "check",
+      "tab": "tools",
+      "section": "Diagnostics",
+      "label": "Ping default gateway",
+      "default": true,
+      "cmd": "ping router x4",
+      "script": [
+        "Write-Step 'Pinging the router'",
+        "$c = Get-TTActiveNet",
+        "$gw = $null",
+        "if ($c) { $gw = @($c.IPv4DefaultGateway)[0].NextHop }",
+        "if (-not $gw) { throw 'No default gateway found.' }",
+        "$p = Measure-TTPing -Target $gw -Count 4",
+        "Write-Info ('{0}: {1} of {2} replies, average {3} ms' -f $gw, ($p.Sent - $p.Lost), $p.Sent, $p.AvgMs)",
+        "if ($p.Lost -ge $p.Sent) { throw ('The router (' + $gw + ') did not answer.') }"
+      ]
+    },
+    {
+      "id": "pinginternet",
+      "type": "check",
+      "tab": "tools",
+      "section": "Diagnostics",
+      "label": "Ping internet (1.1.1.1 and 8.8.8.8)",
+      "default": true,
+      "cmd": "ping 1.1.1.1, 8.8.8.8 x4",
+      "script": [
+        "$ok = 0",
+        "foreach ($t in @('1.1.1.1', '8.8.8.8')) { Write-Step ('Pinging ' + $t); $p = Measure-TTPing -Target $t -Count 4; Write-Info ('{0}: {1} of {2} replies, average {3} ms' -f $t, ($p.Sent - $p.Lost), $p.Sent, $p.AvgMs); if ($p.Lost -lt $p.Sent) { $ok++ } }",
+        "if ($ok -eq 0) { throw 'No replies from the internet.' }"
+      ]
+    },
+    {
+      "id": "tracert",
+      "type": "check",
+      "tab": "tools",
+      "section": "Diagnostics",
+      "label": "Traceroute to 1.1.1.1",
+      "cmd": "tracert -d -h 15 1.1.1.1",
+      "info": "Shows each hop to the internet. Can take up to a minute.",
+      "script": [
+        "Write-Step 'Tracing the route to 1.1.1.1'",
+        "tracert -d -h 15 -w 1000 1.1.1.1"
+      ]
+    },
+    {
+      "id": "publicip",
+      "type": "check",
+      "tab": "tools",
+      "section": "Diagnostics",
+      "label": "Show public IP address",
+      "cmd": "https://api.ipify.org",
+      "script": [
+        "Write-Step 'Asking api.ipify.org'",
+        "$ip = Invoke-RestMethod -Uri 'https://api.ipify.org' -TimeoutSec 8",
+        "Write-Info ('Public IP: ' + $ip)"
+      ]
+    },
+    {
+      "id": "netreport",
+      "type": "check",
+      "tab": "tools",
+      "section": "Diagnostics",
+      "label": "Export network report to Desktop",
+      "cmd": "findings + ipconfig + routes + Wi-Fi -> .txt",
+      "info": "One text file to attach to the ticket.",
+      "script": [
+        "Write-Step 'Collecting network status and findings'",
+        "$out = New-Object System.Collections.Generic.List[string]",
+        "$out.Add('MAV TechTools network report')",
+        "$out.Add('Computer: ' + $env:COMPUTERNAME)",
+        "$out.Add('Created:  ' + (Get-Date))",
+        "$s = Get-TTNetSnapshot",
+        "$r = Get-TTFindings $s",
+        "$out.Add(''); $out.Add('== Findings ==')",
+        "foreach ($x in $r.Findings) { $out.Add('[' + $x.Level.ToUpper() + '] ' + $x.Text) }",
+        "Write-Step 'Adding ipconfig, routes, Wi-Fi and proxy details'",
+        "$cmds = @(@('ipconfig', '/all'), @('route', 'print', '-4'), @('netsh', 'wlan', 'show', 'interfaces'), @('netsh', 'winhttp', 'show', 'proxy'))",
+        "foreach ($c in $cmds) { $out.Add(''); $out.Add('== ' + ($c -join ' ') + ' =='); $res = & $c[0] $c[1..($c.Count - 1)] 2>&1; foreach ($l in $res) { $out.Add([string]$l) } }",
+        "Write-Step 'Saving the report'",
+        "$name = 'MAV-NetReport-' + $env:COMPUTERNAME + '-' + (Get-Date -Format 'yyyyMMdd-HHmm') + '.txt'",
+        "$path = Join-Path ([Environment]::GetFolderPath('Desktop')) $name",
+        "[System.IO.File]::WriteAllLines($path, $out.ToArray())",
+        "Write-Info ('Saved ' + $path)"
+      ]
+    },
+    {
+      "id": "w_speedtest",
+      "type": "winget",
+      "tab": "tools",
+      "section": "Install tools (winget)",
+      "label": "Speedtest CLI",
+      "package": "Ookla.Speedtest.CLI"
+    },
+    {
+      "id": "w_ipscanner",
+      "type": "winget",
+      "tab": "tools",
+      "section": "Install tools (winget)",
+      "label": "Advanced IP Scanner",
+      "package": "Famatech.AdvancedIPScanner"
+    },
+    {
+      "id": "w_wireshark",
+      "type": "winget",
+      "tab": "tools",
+      "section": "Install tools (winget)",
+      "label": "Wireshark",
+      "package": "WiresharkFoundation.Wireshark"
+    },
+    {
+      "id": "w_putty",
+      "type": "winget",
+      "tab": "tools",
+      "section": "Install tools (winget)",
+      "label": "PuTTY",
+      "package": "PuTTY.PuTTY"
+    }
+  ]
+}
