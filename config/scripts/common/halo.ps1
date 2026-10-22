@@ -32,6 +32,38 @@ function Get-HaloError {
     return $msg
 }
 
+function New-TTHaloPdf {
+    # Prints the HTML report to PDF with Edge (headless). Waits for the file itself,
+    # because msedge.exe can exit before the PDF is written. Returns $true when made.
+    param([string]$Html, [string]$Pdf)
+    $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") |
+        Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    if (-not $edge) { Write-Warn 'Microsoft Edge not found, so no PDF.'; return $false }
+    foreach ($extra in @(@(), @('--no-sandbox'))) {
+        $prof = Join-Path $env:TEMP ('MAVTechTools-pdf-' + [guid]::NewGuid().ToString('N'))
+        $argList = @('--headless', '--disable-gpu', '--no-first-run', '--no-pdf-header-footer') + $extra +
+            @(('--user-data-dir="' + $prof + '"'), ('--print-to-pdf="' + $Pdf + '"'), ('"' + ([Uri]$Html).AbsoluteUri + '"'))
+        $p = Start-Process -FilePath $edge -WindowStyle Hidden -PassThru -ArgumentList $argList
+        $until = (Get-Date).AddSeconds(45)
+        $exitedAt = $null
+        while ((Get-Date) -lt $until) {
+            if ((Test-Path -LiteralPath $Pdf) -and (Get-Item -LiteralPath $Pdf).Length -gt 0 -and $p.HasExited) { break }
+            if ($p.HasExited) {
+                if (-not $exitedAt) { $exitedAt = Get-Date }
+                elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 5) { break }
+            }
+            Start-Sleep -Milliseconds 300
+        }
+        Start-Sleep -Milliseconds 300
+        Remove-Item -Path $prof -Recurse -Force -ErrorAction SilentlyContinue
+        if ((Test-Path -LiteralPath $Pdf) -and (Get-Item -LiteralPath $Pdf).Length -gt 0) { return $true }
+        $code = ''
+        try { if ($p.HasExited) { $code = ' (Edge exit code ' + $p.ExitCode + ')' } } catch { }
+        Write-Info ('PDF attempt did not produce a file' + $code)
+    }
+    return $false
+}
+
 Write-Step 'Connecting to HaloPSA'
 $tokenUrl = $base + '/auth/token'
 if ($in.Tenant) { $tokenUrl += '?tenant=' + [Uri]::EscapeDataString([string]$in.Tenant) }
@@ -63,24 +95,28 @@ $file = [string]$in.Html
 if (-not $file -or -not (Test-Path -LiteralPath $file)) { Write-Warn 'The report file was not found, so only the note was added.' }
 else {
     if ($in.AttachPdf) {
-        $edge = @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") |
-            Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
         $pdf = [System.IO.Path]::ChangeExtension($file, '.pdf')
-        if ($edge -and -not (Test-Path -LiteralPath $pdf)) {
-            $prof = Join-Path $env:TEMP ('MAVTechTools-pdf-' + [guid]::NewGuid().ToString('N'))
-            $p = Start-Process -FilePath $edge -WindowStyle Hidden -PassThru -ArgumentList @('--headless', '--disable-gpu', '--no-first-run', '--no-pdf-header-footer',
-                ('--user-data-dir="' + $prof + '"'), ('--print-to-pdf="' + $pdf + '"'), ('"' + ([Uri]$file).AbsoluteUri + '"'))
-            $null = $p.WaitForExit(60000)
-            Remove-Item -Path $prof -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        if (-not (Test-Path -LiteralPath $pdf)) { $null = New-TTHaloPdf -Html $file -Pdf $pdf }
         if ((Test-Path -LiteralPath $pdf) -and (Get-Item -LiteralPath $pdf).Length -gt 0) { $file = $pdf }
         else { Write-Warn 'Could not make a PDF, attaching the HTML report instead.' }
     }
-    $att = @{ ticket_id = $ticket; filename = [System.IO.Path]::GetFileName($file); data_base64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($file)) }
-    if ($actionId) { $att.action_id = [int]$actionId }
-    $abody = ConvertTo-Json -InputObject @($att) -Depth 3
-    try { $null = Invoke-RestMethod -Method Post -Uri ($base + '/api/Attachment') -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($abody)) -ContentType 'application/json; charset=utf-8' -TimeoutSec 60 -UseBasicParsing }
-    catch { Write-Warn ('The note was added but the attachment failed. ' + (Get-HaloError $_ 'Attaching the report')) }
-    Write-Info ('Attached ' + [System.IO.Path]::GetFileName($file))
+    $name = [System.IO.Path]::GetFileName($file)
+    $data = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($file))
+    $sent = $false
+    $lastErr = ''
+    $tries = @($true, $false)
+    if (-not $actionId) { $tries = @($false) }
+    foreach ($withAction in $tries) {
+        $att = @{ ticket_id = $ticket; filename = $name; data_base64 = $data }
+        if ($withAction) { $att.action_id = [int]$actionId }
+        $abody = ConvertTo-Json -InputObject @($att) -Depth 3
+        try {
+            $null = Invoke-RestMethod -Method Post -Uri ($base + '/api/Attachment') -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($abody)) -ContentType 'application/json; charset=utf-8' -TimeoutSec 60 -UseBasicParsing
+            $sent = $true
+            break
+        } catch { $lastErr = Get-HaloError $_ 'Attaching the report' }
+    }
+    if ($sent) { Write-Info ('Attached ' + $name) }
+    else { Write-Warn ('The note was added but the attachment failed. ' + $lastErr) }
 }
 Write-Info ('Sent to HaloPSA ticket #' + $ticket + ' as MAV Tech Tools')
