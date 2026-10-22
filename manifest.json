@@ -1,12 +1,15 @@
 {
   "version": "0.1.0",
   "files": [
+    "app/logo.path.txt",
     "app/MainWindow.xaml",
     "app/TechTools.Core.ps1",
     "app/TechTools.ps1",
-    "app/logo.path.txt",
     "config/categories.json",
     "config/scripts/internet/_shared.ps1",
-    "config/tools/internet.json"
+    "config/scripts/windows/_shared.ps1",
+    "config/scripts/windows/healthcheck.ps1",
+    "config/tools/internet.json",
+    "config/tools/windows.json"
   ]
 }

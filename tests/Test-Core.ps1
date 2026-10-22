@@ -102,6 +102,44 @@ $cards = Get-TTStatusCards $slow
 Check 'six status cards' ($cards.Count -eq 6)
 Check 'DNS card warns when slow' ((@($cards | Where-Object { $_.Label -eq 'DNS' })[0]).Level -eq 'warn')
 
+Write-Host 'PC health check'
+$win = $catalog | Where-Object { $_.Id -eq 'windows' }
+Check 'windows category is live' ($win -and -not $win.ComingSoon)
+$hc = @($win.Tools | Where-Object { $_.Id -eq 'healthcheck' })[0]
+Check 'health check is a quick action on Diagnostics' ($hc -and $hc.Type -eq 'quick' -and $hc.Tab -eq 'diag' -and $hc.Effect -eq 'healthreport')
+Check 'health check has a step per check' ($hc.Script -and (Get-TTStepCount $hc.Script) -ge 12)
+# Load the helpers in this session to test them directly.
+. ([scriptblock]::Create($win.Shared))
+$sec = New-TTSection 'Demo'
+Add-TTFact $sec 'RAM in use' '90%' 'warn'
+Add-TTTable $sec 'Drives' @('Disk', 'Problems') @([pscustomobject]@{ Disk = '0'; Problems = '<b>bad</b> & worse'; _Level = 'fail' })
+Set-TTLevel $sec 'fail'; Set-TTLevel $sec 'warn'
+Check 'section level only goes up' ($sec.Level -eq 'fail')
+$crash = Invoke-TTHealthPart 'Broken' { throw 'boom' }
+Check 'a crashing check becomes a failed section' ($crash.Level -eq 'fail' -and $crash.Summary -match 'boom')
+Check 'subnet mask from prefix' ((ConvertTo-TTMask 24) -eq '255.255.255.0' -and (ConvertTo-TTMask 20) -eq '255.255.240.0')
+$tmp = [System.IO.Path]::GetTempPath()
+$report = New-TTHealthReport -Sections @($sec, $crash) -Folder $tmp
+$html = [System.IO.File]::ReadAllText($report)
+Check 'report file written' (Test-Path $report)
+Check 'report escapes HTML' ($html -match '&lt;b&gt;bad&lt;/b&gt; &amp; worse' -and $html -notmatch '<b>bad')
+Check 'report shows problem count' ($html -match '2 problem\(s\)')
+Remove-Item $report -Force
+
+# On Windows, run the read-only checks for real (skips speed test and Windows Update, which are slow).
+if ($env:OS -eq 'Windows_NT') {
+    $PSDefaultParameterValues['*:ErrorAction'] = 'Stop'
+    $parts = [ordered]@{ System = { Get-TTHealthSystem }; Drives = { Get-TTHealthDisks }; Network = { Get-TTHealthNetwork }
+        Events = { Get-TTHealthEvents }; Processes = { Get-TTHealthProcesses }; Shares = { Get-TTHealthShares }
+        Printers = { Get-TTHealthPrinters }; Security = { Get-TTHealthSecurity } }
+    foreach ($k in $parts.Keys) {
+        $r = Invoke-TTHealthPart $k $parts[$k]
+        Check "live check runs: $k" ($r.Summary -notmatch '^Could not check') ("($($r.Summary))")
+        Write-Host ('       {0}: {1}' -f $r.Level, $r.Summary)
+    }
+    $PSDefaultParameterValues.Remove('*:ErrorAction')
+}
+
 Write-Host ''
 if ($failures.Count -gt 0) { Write-Host "$($failures.Count) check(s) failed" -ForegroundColor Red; exit 1 }
 Write-Host 'All checks passed' -ForegroundColor Green

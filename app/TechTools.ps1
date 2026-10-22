@@ -32,6 +32,7 @@ $script:State = @{
     Page = 'home'; Tab = @{}; Sel = @{}; Choice = @{}; Query = ''
     NetStatus = $null; NetChecked = 'Not checked yet'; Diag = $null
     RestartNeeded = $false; RestartWhy = (New-Object System.Collections.ArrayList); RestartScheduled = $false
+    Health = $null; HealthError = ''; Pdf = $null
 }
 $script:SeenVersion = -1
 
@@ -87,6 +88,8 @@ $script:Icons = @{
     play    = 'M7,4 L20,12 L7,20 Z'
     refresh = 'M20,11 A8,8 0 1 0 17.7,16.7 M20,4 L20,11 L13,11'
     pulse   = 'M3,12 L7,12 L10,4 L14,20 L17,12 L21,12'
+    file    = 'M6,2 H14 L20,8 V22 H6 Z M14,2 V8 H20'
+    folder  = 'M3,6 H10 L12,8 H21 V19 H3 Z'
 }
 function New-Icon {
     param([string]$Name, [double]$Size = 16, [string]$Color = '#E6EDF5', [switch]$Fill)
@@ -197,6 +200,7 @@ function Render-Page {
     $script:SectionCounts = @()
     $script:StatusHost = $null
     $script:SectionsHost = $null
+    $script:HealthHost = $null
     if ($script:State.Page -eq 'home') { Render-Home } else { Render-Category (Get-Cat $script:State.Page) }
 }
 
@@ -285,7 +289,7 @@ function Render-Category {
     $current = Get-CurrentTab $Cat
 
     # Sub-section tabs
-    if ($Cat.Tabs.Count -gt 1) {
+    if ($Cat.Tabs.Count -gt 1 -or $Cat.Tabs[0].Id -ne 'main') {
         $bar = New-Object Windows.Controls.Border
         $bar.BorderBrush = Get-Brush $script:Colors.line
         $bar.BorderThickness = '0,0,0,1'
@@ -358,11 +362,22 @@ function Render-Category {
             if ($q.Cmd) { [void]$tx.Children.Add((New-Text $q.Cmd -Size 11 -Color $script:Colors.muted -Mono)) }
             [void]$sp.Children.Add($tx)
             $b.Content = $sp
-            $b.Add_Click({ Invoke-Tool $script:State.Page $this.Uid })
+            $b.Add_Click({ Invoke-Tool $script:State.Page $this.Uid; if ($script:HealthHost) { Render-Health } })
             [void]$qw.Children.Add($b)
         }
         [void]$p.Children.Add($qw)
     }
+
+    # PC health report (Windows > Diagnostics)
+    if (@($Cat.Tools | Where-Object { $_.Effect -eq 'healthreport' -and $_.Tab -eq $current }).Count -gt 0) {
+        $script:HealthHost = New-Object Windows.Controls.StackPanel
+        [void]$p.Children.Add($script:HealthHost)
+        Render-Health
+    }
+
+    # Tabs with only quick actions (or reports) skip the checklist toolbar.
+    $pickable = @($Cat.Tools | Where-Object { $_.Type -ne 'quick' -and -not $_.Hidden })
+    if ($pickable.Count -eq 0) { return }
 
     # Toolbar
     $tb = New-Object Windows.Controls.Border
@@ -686,6 +701,312 @@ function Render-Status {
     [void]$h.Children.Add($card)
 }
 
+# ------------------------------------------------------ PC health report ---
+$script:HealthLabel = @{ ok = 'OK'; warn = 'CHECK'; fail = 'PROBLEM'; info = 'INFO' }
+$script:HealthBorder = @{ ok = '#1F4D3D'; warn = '#5A4A1F'; fail = '#5A2626'; info = '#1E2A3B' }
+
+function New-Dot {
+    param([string]$Level, [double]$Size = 10)
+    $d = New-Object Windows.Shapes.Ellipse
+    $d.Width = $Size; $d.Height = $Size
+    $c = $script:Colors[$Level]
+    if (-not $c) { $c = $script:Colors.muted }
+    $d.Fill = Get-Brush $c
+    $d.VerticalAlignment = 'Center'
+    return $d
+}
+
+function New-Chip {
+    param([string]$Level)
+    $chip = New-Object Windows.Controls.Border
+    $chip.BorderBrush = Get-Brush $script:HealthBorder[$Level]
+    $chip.BorderThickness = 1
+    $chip.CornerRadius = 9
+    $chip.Padding = '8,1'
+    $chip.Margin = '10,0,0,0'
+    $chip.VerticalAlignment = 'Center'
+    $c = $script:Colors[$Level]
+    if ($Level -eq 'info') { $c = $script:Colors.muted }
+    $chip.Child = (New-Text $script:HealthLabel[$Level] -Size 10 -Color $c -Mono)
+    return $chip
+}
+
+function New-HealthTable {
+    param($Table)
+    $cols = @($Table.Columns)
+    $sp = New-Object Windows.Controls.StackPanel
+    $sp.Margin = '0,4,0,12'
+    [void]$sp.Children.Add((New-Text ([string]$Table.Caption).ToUpper() -Size 10 -Color $script:Colors.muted -Mono -Margin '0,0,0,6'))
+    $g = New-Object Windows.Controls.Grid
+    foreach ($c in $cols) {
+        $cd = New-Object Windows.Controls.ColumnDefinition
+        $cd.Width = 'Auto'
+        [void]$g.ColumnDefinitions.Add($cd)
+    }
+    $rows = @($Table.Rows)
+    $n = [math]::Max(1, $rows.Count) + 1
+    for ($i = 0; $i -lt $n; $i++) {
+        $rd = New-Object Windows.Controls.RowDefinition
+        $rd.Height = 'Auto'
+        [void]$g.RowDefinitions.Add($rd)
+    }
+    $line = Get-Brush $script:Colors.line
+    for ($c = 0; $c -lt $cols.Count; $c++) {
+        $t = New-Text $cols[$c] -Size 11 -Color $script:Colors.muted -Weight SemiBold -Margin '0,0,18,6'
+        [Windows.Controls.Grid]::SetColumn($t, $c)
+        [void]$g.Children.Add($t)
+    }
+    if ($rows.Count -eq 0) {
+        $t = New-Text 'None' -Color $script:Colors.muted -Margin '0,4,0,4'
+        [Windows.Controls.Grid]::SetRow($t, 1)
+        [Windows.Controls.Grid]::SetColumnSpan($t, $cols.Count)
+        [void]$g.Children.Add($t)
+    }
+    for ($r = 0; $r -lt $rows.Count; $r++) {
+        $row = $rows[$r]
+        $lv = [string]$row._Level
+        $bg = New-Object Windows.Controls.Border
+        $bg.BorderBrush = $line
+        $bg.BorderThickness = '0,1,0,0'
+        if ($lv -eq 'warn') { $bg.Background = Get-Brush '#1F1A0C' }
+        elseif ($lv -eq 'fail') { $bg.Background = Get-Brush '#2A1414' }
+        [Windows.Controls.Grid]::SetRow($bg, $r + 1)
+        [Windows.Controls.Grid]::SetColumnSpan($bg, $cols.Count)
+        [void]$g.Children.Add($bg)
+        for ($c = 0; $c -lt $cols.Count; $c++) {
+            $color = $script:Colors.text
+            if ($c -gt 0 -and ($lv -eq 'warn' -or $lv -eq 'fail')) { $color = $script:Colors[$lv] }
+            $t = New-Text ([string]$row.($cols[$c])) -Size 12 -Color $color -Wrap -Margin '0,5,18,5'
+            $t.MaxWidth = 380
+            [Windows.Controls.Grid]::SetRow($t, $r + 1)
+            [Windows.Controls.Grid]::SetColumn($t, $c)
+            [void]$g.Children.Add($t)
+        }
+    }
+    $sv = New-Object Windows.Controls.ScrollViewer
+    $sv.HorizontalScrollBarVisibility = 'Auto'
+    $sv.VerticalScrollBarVisibility = 'Disabled'
+    $sv.Content = $g
+    [void]$sp.Children.Add($sv)
+    return $sp
+}
+
+function New-HealthSection {
+    param($Sec)
+    $card = New-Card -Padding '18'
+    $card.Margin = '0,0,0,14'
+    if ($Sec.Level -eq 'warn' -or $Sec.Level -eq 'fail') { $card.BorderBrush = Get-Brush $script:HealthBorder[$Sec.Level] }
+    $sp = New-Object Windows.Controls.StackPanel
+    $hd = New-Object Windows.Controls.StackPanel
+    $hd.Orientation = 'Horizontal'
+    [void]$hd.Children.Add((New-Text $Sec.Title -Size 17 -Weight SemiBold))
+    [void]$hd.Children.Add((New-Chip $Sec.Level))
+    [void]$sp.Children.Add($hd)
+    [void]$sp.Children.Add((New-Text $Sec.Summary -Color $script:Colors.muted -Wrap -Margin '0,4,0,10'))
+    foreach ($n in @($Sec.Notes)) {
+        $nb = New-Object Windows.Controls.Border
+        $nb.Background = Get-Brush '#0A1019'
+        $nc = $script:Colors[$n.Level]
+        if (-not $nc -or $n.Level -eq 'info') { $nc = $script:Colors.muted }
+        $nb.BorderBrush = Get-Brush $nc
+        $nb.BorderThickness = '3,0,0,0'
+        $nb.CornerRadius = 6
+        $nb.Padding = '10,6'
+        $nb.Margin = '0,0,0,8'
+        $nb.Child = (New-Text $n.Text -Wrap)
+        [void]$sp.Children.Add($nb)
+    }
+    $facts = @($Sec.Facts)
+    if ($facts.Count) {
+        $g = New-Object Windows.Controls.Grid
+        $g.Margin = '0,0,0,10'
+        foreach ($w in @('Auto', '*')) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = $w; [void]$g.ColumnDefinitions.Add($cd) }
+        for ($i = 0; $i -lt $facts.Count; $i++) {
+            $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = 'Auto'; [void]$g.RowDefinitions.Add($rd)
+            $l = New-Text $facts[$i].Label -Color $script:Colors.muted -Margin '0,2,24,2'
+            [Windows.Controls.Grid]::SetRow($l, $i)
+            [void]$g.Children.Add($l)
+            $vc = $script:Colors.text
+            if ($facts[$i].Level -eq 'warn' -or $facts[$i].Level -eq 'fail') { $vc = $script:Colors[$facts[$i].Level] }
+            $v = New-Text $facts[$i].Value -Color $vc -Wrap -Margin '0,2,0,2'
+            [Windows.Controls.Grid]::SetRow($v, $i)
+            [Windows.Controls.Grid]::SetColumn($v, 1)
+            [void]$g.Children.Add($v)
+        }
+        [void]$sp.Children.Add($g)
+    }
+    foreach ($t in @($Sec.Tables)) { [void]$sp.Children.Add((New-HealthTable $t)) }
+    $card.Child = $sp
+    return $card
+}
+
+function Render-Health {
+    $h = $script:HealthHost
+    if ($null -eq $h) { return }
+    $h.Children.Clear()
+    $res = $script:State.Health
+    $busy = Test-ToolBusy 'healthcheck'
+
+    if ($null -eq $res) {
+        $card = New-Card -Padding '22'
+        $sp = New-Object Windows.Controls.StackPanel
+        if ($busy) {
+            [void]$sp.Children.Add((New-Text 'Health check running...' -Size 17 -Weight SemiBold))
+            [void]$sp.Children.Add((New-Text 'This takes 1-3 minutes. Progress shows in the Action Center; the results will appear here.' -Color $script:Colors.muted -Wrap -Margin '0,6,0,0'))
+        } else {
+            [void]$sp.Children.Add((New-Text 'No health check yet' -Size 17 -Weight SemiBold))
+            $msg = 'Press "Run PC health check" above. It only reads information and changes nothing on the PC.'
+            if ($script:State.HealthError) { $msg = 'The last check failed: ' + $script:State.HealthError }
+            [void]$sp.Children.Add((New-Text $msg -Color $script:Colors.muted -Wrap -Margin '0,6,0,0'))
+        }
+        $card.Child = $sp
+        [void]$h.Children.Add($card)
+        return
+    }
+
+    $sections = @($res.Sections)
+    $fails = @($sections | Where-Object { $_.Level -eq 'fail' }).Count
+    $warns = @($sections | Where-Object { $_.Level -eq 'warn' }).Count
+    $overall = 'ok'
+    $headline = 'Everything checked looks healthy'
+    if ($fails) { $overall = 'fail'; $headline = ('{0} problem(s) and {1} warning(s) found' -f $fails, $warns) }
+    elseif ($warns) { $overall = 'warn'; $headline = ('{0} warning(s), nothing failing' -f $warns) }
+
+    # Header: who, when, overall result, export buttons
+    $top = New-Card -Padding '18'
+    $top.Background = Get-Brush '#0A1019'
+    $top.BorderBrush = Get-Brush $script:HealthBorder[$overall]
+    $top.Margin = '0,0,0,14'
+    $dock = New-Object Windows.Controls.DockPanel
+    $btns = New-Object Windows.Controls.WrapPanel
+    $btns.VerticalAlignment = 'Center'
+    [Windows.Controls.DockPanel]::SetDock($btns, 'Right')
+    $pdf = New-Button 'Save as PDF' -Style 'PrimaryBtn' -Icon 'file' -IconColor '#04121A'
+    $pdf.Margin = '8,0,0,0'
+    $pdf.IsEnabled = ($null -eq $script:State.Pdf)
+    if ($script:State.Pdf) { $pdf.Content = 'Making PDF...' }
+    $pdf.Add_Click({ Save-HealthPdf })
+    $open = New-Button 'Open report' -Icon 'file'
+    $open.Margin = '8,0,0,0'
+    $open.ToolTip = 'Opens the full report in the browser (print or email it from there)'
+    $open.Add_Click({ if ($script:State.Health -and (Test-Path $script:State.Health.Html)) { Start-Process -FilePath $script:State.Health.Html } })
+    $again = New-Button 'Run again' -Icon 'refresh'
+    $again.Margin = '8,0,0,0'
+    $again.IsEnabled = -not $busy
+    $again.Add_Click({ Invoke-Tool $script:State.Page 'healthcheck'; Render-Health })
+    [void]$btns.Children.Add($again)
+    [void]$btns.Children.Add($open)
+    [void]$btns.Children.Add($pdf)
+    [void]$dock.Children.Add($btns)
+    $who = New-Object Windows.Controls.StackPanel
+    [void]$who.Children.Add((New-Text 'PC HEALTH REPORT' -Size 11 -Color $script:Colors.accent -Mono))
+    [void]$who.Children.Add((New-Text ([string]$res.Pc) -Size 24 -Weight SemiBold -Margin '0,2,0,4'))
+    $line = New-Object Windows.Controls.StackPanel
+    $line.Orientation = 'Horizontal'
+    $dot = New-Dot $overall 12
+    $dot.Margin = '0,0,8,0'
+    [void]$line.Children.Add($dot)
+    [void]$line.Children.Add((New-Text $headline -Size 15 -Weight SemiBold -Color $script:Colors[$overall]))
+    $when = 'Checked ' + ([datetime]$res.At).ToString('yyyy-MM-dd HH:mm')
+    if ($busy) { $when = 'Running a new check...' }
+    [void]$line.Children.Add((New-Text $when -Size 11 -Color $script:Colors.muted -Mono -Margin '14,3,0,0'))
+    [void]$who.Children.Add($line)
+    [void]$dock.Children.Add($who)
+    $top.Child = $dock
+    [void]$h.Children.Add($top)
+
+    # Detail cards first (built now so the summary tiles can jump to them)
+    $cards = @()
+    foreach ($sec in $sections) { $cards += (New-HealthSection $sec) }
+
+    # Summary tiles: one per check, problems first
+    $grid = New-Object Windows.Controls.WrapPanel
+    $grid.Margin = '0,0,0,8'
+    $rank = @{ fail = 0; warn = 1; ok = 2; info = 3 }
+    $order = @(0..($sections.Count - 1) | Sort-Object { $rank[$sections[$_].Level] }, { $_ })
+    foreach ($i in $order) {
+        $sec = $sections[$i]
+        $b = New-Object Windows.Controls.Button
+        $b.Style = $script:Window.FindResource('Btn')
+        $b.Width = 268
+        $b.Margin = '0,0,10,10'
+        $b.Padding = '12,10'
+        $b.HorizontalContentAlignment = 'Left'
+        $b.BorderBrush = Get-Brush $script:HealthBorder[$sec.Level]
+        $b.Tag = $cards[$i]
+        $b.ToolTip = 'Jump to details'
+        $sp = New-Object Windows.Controls.StackPanel
+        $t = New-Object Windows.Controls.StackPanel
+        $t.Orientation = 'Horizontal'
+        $d = New-Dot $sec.Level 9
+        $d.Margin = '0,0,8,0'
+        [void]$t.Children.Add($d)
+        [void]$t.Children.Add((New-Text $sec.Title -Weight SemiBold))
+        [void]$sp.Children.Add($t)
+        $sum = New-Text $sec.Summary -Size 12 -Color $script:Colors.muted -Wrap -Margin '0,4,0,0'
+        $sum.MaxHeight = 34
+        $sum.TextTrimming = 'CharacterEllipsis'
+        [void]$sp.Children.Add($sum)
+        $b.Content = $sp
+        $b.Add_Click({ $this.Tag.BringIntoView() })
+        [void]$grid.Children.Add($b)
+    }
+    [void]$h.Children.Add($grid)
+    foreach ($c in $cards) { [void]$h.Children.Add($c) }
+}
+
+function Find-Edge {
+    foreach ($p in @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe")) {
+        if ($p -and (Test-Path $p)) { return $p }
+    }
+    return $null
+}
+
+function Save-HealthPdf {
+    $res = $script:State.Health
+    if (-not $res -or -not (Test-Path $res.Html)) { Add-ConsoleLine 'Run the health check first.' 'warn'; return }
+    $pdf = [System.IO.Path]::ChangeExtension($res.Html, '.pdf')
+    $edge = Find-Edge
+    if (-not $edge) {
+        Add-ConsoleLine 'Microsoft Edge not found: opening the report so you can Print > Save as PDF.' 'warn'
+        Start-Process -FilePath $res.Html
+        return
+    }
+    if (Test-Path $pdf) { Remove-Item $pdf -Force -ErrorAction SilentlyContinue }
+    $profile_ = Join-Path $env:TEMP ('MAVTechTools-pdf-' + [guid]::NewGuid().ToString('N'))
+    $args_ = @('--headless', '--disable-gpu', '--no-first-run', '--no-pdf-header-footer', ('--user-data-dir="' + $profile_ + '"'),
+        ('--print-to-pdf="' + $pdf + '"'), ('"' + ([Uri]$res.Html).AbsoluteUri + '"'))
+    try {
+        $proc = Start-Process -FilePath $edge -ArgumentList $args_ -WindowStyle Hidden -PassThru
+    } catch {
+        Add-ConsoleLine ('Could not start Edge: ' + $_.Exception.Message + '. Opening the report instead.') 'warn'
+        Start-Process -FilePath $res.Html
+        return
+    }
+    $script:State.Pdf = @{ Proc = $proc; Path = $pdf; Html = $res.Html; Profile = $profile_; Until = (Get-Date).AddSeconds(60) }
+    Add-ConsoleLine 'Making PDF...' 'step'
+    Render-Health
+}
+
+function Update-PdfJob {
+    # Called by the UI timer while a PDF is being made.
+    $job = $script:State.Pdf
+    if ($null -eq $job) { return }
+    $ready = (Test-Path $job.Path) -and ((Get-Item $job.Path).Length -gt 0)
+    if (-not $job.Proc.HasExited -and -not $ready -and (Get-Date) -lt $job.Until) { return }
+    if ($ready -and -not $job.Proc.HasExited -and (Get-Date) -lt $job.Until) { return }
+    $script:State.Pdf = $null
+    try { Remove-Item -Path $job.Profile -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+    if ($ready) {
+        Add-ConsoleLine ('PDF saved: ' + $job.Path) 'ok'
+        Start-Process -FilePath $job.Path
+    } else {
+        Add-ConsoleLine 'The PDF could not be made. Opening the report: use Print > Save as PDF.' 'warn'
+        Start-Process -FilePath $job.Html
+    }
+    if ($script:HealthHost) { Render-Health }
+}
+
 function Select-Recommended {
     $cat = Get-Cat $script:State.Page
     $diag = $script:State.Diag
@@ -752,6 +1073,7 @@ function Update-ActionCenter {
 
 function Complete-FinishedJobs {
     $statusChanged = $false
+    $healthChanged = $false
     foreach ($j in $script:Sync.Jobs.ToArray()) {
         if ($j.Handled -or ($j.Status -ne 'done' -and $j.Status -ne 'failed')) { continue }
         $j.Handled = $true
@@ -759,6 +1081,11 @@ function Complete-FinishedJobs {
             $script:State.RestartNeeded = $true
             if ($script:State.RestartWhy -notcontains $j.Name) { [void]$script:State.RestartWhy.Add($j.Name) }
             Add-ConsoleLine ('Restart needed to finish: ' + $j.Name) 'warn'
+        }
+        if ($j.Effect -eq 'healthreport') {
+            $healthChanged = $true
+            if ($j.Status -eq 'done' -and $j.Result) { $script:State.Health = $j.Result; $script:State.HealthError = '' }
+            else { $script:State.HealthError = [string]$j.Error }
         }
         if ($j.Effect -eq 'netstatus' -or $j.Effect -eq 'diagnose') {
             $statusChanged = $true
@@ -775,6 +1102,7 @@ function Complete-FinishedJobs {
         }
     }
     if ($statusChanged) { Render-Status }
+    if ($healthChanged -and $script:HealthHost) { Render-Health }
     Update-RestartBanner
 }
 
@@ -796,6 +1124,7 @@ function Invoke-Tick {
         $line = $null
         $n = 0
         while ($n -lt 300 -and $script:Sync.Log.TryDequeue([ref]$line)) { Add-ConsoleLine $line.Text $line.Tone $line.Time; $n++ }
+        if ($script:State.Pdf) { Update-PdfJob }
         if ($script:Sync.Version -ne $script:SeenVersion) {
             $script:SeenVersion = $script:Sync.Version
             Update-ActionCenter
@@ -873,6 +1202,19 @@ if ($SmokeTest) {
         Recommend = @([pscustomobject]@{ Id = 'flushdns'; Value = $null }, [pscustomobject]@{ Id = 'dns'; Value = 'cloudflare' }) }
     Render-Page
     Select-Recommended
+    $script:State.Page = 'windows'
+    $fakeSec = [pscustomobject]@{ Title = 'Drives and health'; Level = 'fail'; Summary = '1 drive - FAILURE SIGNS FOUND'
+        Facts = @([pscustomobject]@{ Label = 'PC name'; Value = 'TEST-PC'; Level = '' })
+        Tables = @([pscustomobject]@{ Caption = 'Physical drives'; Columns = @('Disk', 'Model', 'Problems')
+            Rows = @([pscustomobject]@{ Disk = '0'; Model = 'Test SSD'; Problems = '12 uncorrected read errors'; _Level = 'fail' }) },
+            [pscustomobject]@{ Caption = 'Empty'; Columns = @('A'); Rows = @() })
+        Notes = @([pscustomobject]@{ Text = 'Back up now.'; Level = 'fail' }) }
+    $okSec = [pscustomobject]@{ Title = 'System'; Level = 'ok'; Summary = 'TEST-PC'; Facts = @(); Tables = @(); Notes = @() }
+    $script:State.Health = [pscustomobject]@{ Sections = @($okSec, $fakeSec); Html = (Join-Path $env:TEMP 'none.html'); At = (Get-Date); Pc = 'TEST-PC' }
+    Render-Page
+    if ($null -eq $script:HealthHost -or $script:HealthHost.Children.Count -lt 4) { Write-Host 'FAIL health report did not render'; $errors++ }
+    $script:State.Page = 'internet'
+    Render-Page
     $net = Get-Cat 'internet'
     if (-not $script:State.Sel['internet:flushdns'] -or $script:State.Choice['internet:dns'] -ne 'cloudflare') { Write-Host 'FAIL recommended fixes not selected'; $errors++ }
     $jobs = Get-TTSelectionJobs -Category $net -Sel $script:State.Sel -Choice $script:State.Choice

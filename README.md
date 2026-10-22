@@ -36,7 +36,7 @@ How it works on screen:
 | Category | Status |
 | --- | --- |
 | Internet Issues | Live: connection status, full diagnosis with recommended fixes, 31 tools across Diagnose & Repair, Wi-Fi and Tools |
-| Windows | Coming next (tabs planned: Tweaks, Updates, Configurations, Installs, Repair) |
+| Windows | Live: Diagnostics tab with **PC health check** (system, RAM, drives and drive health, free space, network, pings, speed test, event log errors, top processes, shares, printers and driver dates, pending updates, Webroot / SentinelOne / Bitdefender / CrowdStrike). Results show in the app and save as HTML or PDF. Tweaks, Updates, Configurations, Installs and Repair come next. |
 | Dental | Planned: needs install paths, service names and ports per program |
 | Ophthalmic | Planned |
 

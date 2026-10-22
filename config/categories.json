@@ -3,10 +3,11 @@
     {
       "id": "windows",
       "title": "Windows",
-      "blurb": "Tweaks, updates, configuration, app installs and repairs for Windows 10/11 workstations.",
-      "tiles": "Tweaks - Updates - Configurations - Installs - Repair",
+      "blurb": "Diagnostics first, then tweaks, updates, configuration, installs and repairs for Windows 10/11 workstations.",
+      "tiles": "Diagnostics - Tweaks - Updates - Configurations - Installs - Repair",
       "icon": "windows",
-      "restorePoint": true
+      "restorePoint": true,
+      "file": "tools/windows.json"
     },
     {
       "id": "dental",
