@@ -46,7 +46,7 @@ $script:State = @{
     NetStatus = $null; NetChecked = 'Not checked yet'; Diag = $null
     RestartNeeded = $false; RestartWhy = (New-Object System.Collections.ArrayList); RestartScheduled = $false
     Health = $null; HealthError = ''; Pdf = $null; Server = $null; ServerError = ''
-    Notices = @{}
+    Notices = @{}; Pane = @{}
 }
 $script:SeenVersion = -1
 
@@ -487,7 +487,7 @@ function Render-Category {
     $tb.Child = $dock
     [void]$p.Children.Add($tb)
 
-    $script:SectionsHost = New-Object Windows.Controls.WrapPanel
+    $script:SectionsHost = New-Object Windows.Controls.StackPanel
     [void]$p.Children.Add($script:SectionsHost)
     Render-Sections
 }
@@ -526,6 +526,15 @@ function Render-Sections {
         [void]$groups[$name].Add($t)
     }
 
+    if (-not $q) {
+        Render-SidePane $cat $order $groups
+        Update-Counts
+        return
+    }
+
+    # Search results: matching tools from every section, as cards
+    $wrap = New-Object Windows.Controls.WrapPanel
+    [void]$host_.Children.Add($wrap)
     foreach ($name in $order) {
         $card = New-Card -Width 380
         $card.Margin = '0,0,16,16'
@@ -545,59 +554,148 @@ function Render-Sections {
         [void]$sp.Children.Add($hdLine)
         $script:SectionCounts += @{ Text = $cnt; Tools = @($groups[$name]) }
 
-        foreach ($t in $groups[$name]) {
-            $key = $cat.Id + ':' + $t.Id
-            if ($t.Type -eq 'choice') {
-                $box = New-Object Windows.Controls.StackPanel
-                $box.Margin = '8,6,8,8'
-                if ($t.Info) { $box.ToolTip = $t.Info }
-                [void]$box.Children.Add((New-Text $t.Label -Margin '0,0,0,6'))
-                $cb = New-Object Windows.Controls.ComboBox
-                $cb.Tag = $key
-                $none = New-Object Windows.Controls.ComboBoxItem
-                $none.Content = 'No change'; $none.Tag = 'none'
-                [void]$cb.Items.Add($none)
-                $sel = 0; $i = 1
-                foreach ($o in $t.Options) {
-                    $it = New-Object Windows.Controls.ComboBoxItem
-                    $it.Content = $o.Label; $it.Tag = $o.Value
-                    [void]$cb.Items.Add($it)
-                    if ($script:State.Choice[$key] -eq $o.Value) { $sel = $i }
-                    $i++
-                }
-                $cb.SelectedIndex = $sel
-                $cb.Add_SelectionChanged({
-                    if ($this.SelectedItem) { $script:State.Choice[[string]$this.Tag] = [string]$this.SelectedItem.Tag }
-                    Update-Counts
-                })
-                [void]$box.Children.Add($cb)
-                [void]$sp.Children.Add($box)
-            } else {
-                $chk = New-Object Windows.Controls.CheckBox
-                $chk.Tag = $key
-                $chk.IsChecked = [bool]$script:State.Sel[$key]
-                if ($t.Info) { $chk.ToolTip = $t.Info }
-                $content = New-Object Windows.Controls.StackPanel
-                $line = New-Object Windows.Controls.WrapPanel
-                [void]$line.Children.Add((New-Text $t.Label -Wrap))
-                if ($t.Restart) {
-                    $chip = New-Object Windows.Controls.Border
-                    $chip.BorderBrush = Get-Brush '#5A4A1F'; $chip.BorderThickness = 1; $chip.CornerRadius = 8
-                    $chip.Padding = '6,0'; $chip.Margin = '8,1,0,0'; $chip.VerticalAlignment = 'Center'
-                    $chip.Child = (New-Text 'RESTART' -Size 9 -Color $script:Colors.warn -Mono)
-                    [void]$line.Children.Add($chip)
-                }
-                [void]$content.Children.Add($line)
-                if ($t.Cmd) { [void]$content.Children.Add((New-Text $t.Cmd -Size 11 -Color $script:Colors.muted -Mono -Wrap -Margin '0,2,0,0')) }
-                $chk.Content = $content
-                $chk.Add_Click({ $script:State.Sel[[string]$this.Tag] = [bool]$this.IsChecked; Update-Counts })
-                [void]$sp.Children.Add($chk)
-            }
-        }
+        foreach ($t in $groups[$name]) { [void]$sp.Children.Add((New-ToolItem $cat $t)) }
         $card.Child = $sp
-        [void]$host_.Children.Add($card)
+        [void]$wrap.Children.Add($card)
     }
     Update-Counts
+}
+
+function Render-SidePane {
+    # Side menu of sections on the left, the chosen section's tools on the right.
+    param($cat, $order, $groups)
+    $current = Get-CurrentTab $cat
+    $paneKey = $cat.Id + ':' + $current
+    $chosen = $script:State.Pane[$paneKey]
+    if (-not $chosen -or -not $groups.ContainsKey($chosen)) { $chosen = $order[0] }
+
+    $frame = New-Card -Padding '0'
+    $grid = New-Object Windows.Controls.Grid
+    $c1 = New-Object Windows.Controls.ColumnDefinition; $c1.Width = '240'
+    $c2 = New-Object Windows.Controls.ColumnDefinition; $c2.Width = '*'
+    [void]$grid.ColumnDefinitions.Add($c1); [void]$grid.ColumnDefinitions.Add($c2)
+    $grid.MinHeight = 360
+
+    $navBorder = New-Object Windows.Controls.Border
+    $navBorder.Background = Get-Brush '#0A1019'
+    $navBorder.BorderBrush = Get-Brush $script:Colors.line
+    $navBorder.BorderThickness = '0,0,1,0'
+    $navBorder.CornerRadius = '14,0,0,14'
+    $navBorder.Padding = '8'
+    $nav = New-Object Windows.Controls.StackPanel
+    foreach ($name in $order) {
+        $active = ($name -eq $chosen)
+        $b = New-Object Windows.Controls.Button
+        $b.Style = $script:Window.FindResource('Btn')
+        $b.HorizontalContentAlignment = 'Stretch'
+        $b.Padding = '10,8'
+        $b.Margin = '0,0,0,4'
+        $b.BorderThickness = '3,0,0,0'
+        if ($active) { $b.Background = Get-Brush '#12324A'; $b.BorderBrush = Get-Brush $script:Colors.accent }
+        else { $b.Background = Get-Brush 'Transparent'; $b.BorderBrush = Get-Brush 'Transparent' }
+        $row = New-Object Windows.Controls.DockPanel
+        $cnt = New-Text '' -Size 11 -Color $script:Colors.muted -Mono
+        $cnt.VerticalAlignment = 'Center'
+        [Windows.Controls.DockPanel]::SetDock($cnt, 'Right')
+        [void]$row.Children.Add($cnt)
+        $nm = New-Text $name
+        $nm.TextTrimming = 'CharacterEllipsis'
+        if ($active) { $nm.FontWeight = 'SemiBold' }
+        [void]$row.Children.Add($nm)
+        $b.Content = $row
+        $b.Tag = $name
+        $b.Add_Click({ $script:State.Pane[(Get-PaneKey)] = [string]$this.Tag; Render-Sections })
+        [void]$nav.Children.Add($b)
+        $script:SectionCounts += @{ Text = $cnt; Tools = @($groups[$name]) }
+    }
+    $navBorder.Child = $nav
+    [Windows.Controls.Grid]::SetColumn($navBorder, 0)
+    [void]$grid.Children.Add($navBorder)
+
+    $right = New-Object Windows.Controls.StackPanel
+    $right.Margin = '18,14,18,16'
+    $hd = New-Object Windows.Controls.DockPanel
+    $cnt = New-Text '' -Size 11 -Color $script:Colors.muted -Mono
+    $cnt.VerticalAlignment = 'Center'
+    [Windows.Controls.DockPanel]::SetDock($cnt, 'Right')
+    [void]$hd.Children.Add($cnt)
+    [void]$hd.Children.Add((New-Text $chosen -Size 16 -Weight SemiBold -Color $script:Colors.accent))
+    $hdLine = New-Object Windows.Controls.Border
+    $hdLine.BorderBrush = Get-Brush $script:Colors.line; $hdLine.BorderThickness = '0,0,0,1'
+    $hdLine.Padding = '0,0,0,8'; $hdLine.Margin = '0,0,0,8'; $hdLine.Child = $hd
+    [void]$right.Children.Add($hdLine)
+    $script:SectionCounts += @{ Text = $cnt; Tools = @($groups[$chosen]) }
+    $items = New-Object Windows.Controls.WrapPanel
+    foreach ($t in $groups[$chosen]) {
+        $el = New-ToolItem $cat $t -Compact
+        $el.Width = 300
+        $el.Margin = '0,4,16,6'
+        [void]$items.Children.Add($el)
+    }
+    [void]$right.Children.Add($items)
+    [Windows.Controls.Grid]::SetColumn($right, 1)
+    [void]$grid.Children.Add($right)
+
+    $frame.Child = $grid
+    [void]$script:SectionsHost.Children.Add($frame)
+}
+
+function Get-PaneKey {
+    $cat = Get-Cat $script:State.Page
+    return ($cat.Id + ':' + (Get-CurrentTab $cat))
+}
+
+function New-ToolItem {
+    # One checkbox or dropdown for a tool. -Compact leaves out the command line (it shows on hover).
+    param($cat, $t, [switch]$Compact)
+    $key = $cat.Id + ':' + $t.Id
+    if ($t.Type -eq 'choice') {
+        $box = New-Object Windows.Controls.StackPanel
+        $box.Margin = '8,6,8,8'
+        if ($t.Info) { $box.ToolTip = $t.Info }
+        [void]$box.Children.Add((New-Text $t.Label -Margin '0,0,0,6'))
+        $cb = New-Object Windows.Controls.ComboBox
+        $cb.Tag = $key
+        $none = New-Object Windows.Controls.ComboBoxItem
+        $none.Content = 'No change'; $none.Tag = 'none'
+        [void]$cb.Items.Add($none)
+        $sel = 0; $i = 1
+        foreach ($o in $t.Options) {
+            $it = New-Object Windows.Controls.ComboBoxItem
+            $it.Content = $o.Label; $it.Tag = $o.Value
+            [void]$cb.Items.Add($it)
+            if ($script:State.Choice[$key] -eq $o.Value) { $sel = $i }
+            $i++
+        }
+        $cb.SelectedIndex = $sel
+        $cb.Add_SelectionChanged({
+            if ($this.SelectedItem) { $script:State.Choice[[string]$this.Tag] = [string]$this.SelectedItem.Tag }
+            Update-Counts
+        })
+        [void]$box.Children.Add($cb)
+        return $box
+    } else {
+        $chk = New-Object Windows.Controls.CheckBox
+        $chk.Tag = $key
+        $chk.IsChecked = [bool]$script:State.Sel[$key]
+        if ($t.Info) { $chk.ToolTip = $t.Info }
+        $content = New-Object Windows.Controls.StackPanel
+        $line = New-Object Windows.Controls.WrapPanel
+        [void]$line.Children.Add((New-Text $t.Label -Wrap))
+        if ($t.Restart) {
+            $chip = New-Object Windows.Controls.Border
+            $chip.BorderBrush = Get-Brush '#5A4A1F'; $chip.BorderThickness = 1; $chip.CornerRadius = 8
+            $chip.Padding = '6,0'; $chip.Margin = '8,1,0,0'; $chip.VerticalAlignment = 'Center'
+            $chip.Child = (New-Text 'RESTART' -Size 9 -Color $script:Colors.warn -Mono)
+            [void]$line.Children.Add($chip)
+        }
+        [void]$content.Children.Add($line)
+        if ($t.Cmd -and -not $Compact) { [void]$content.Children.Add((New-Text $t.Cmd -Size 11 -Color $script:Colors.muted -Mono -Wrap -Margin '0,2,0,0')) }
+        if ($Compact -and $t.Cmd) { $chk.ToolTip = ((([string]$t.Info) + [Environment]::NewLine + $t.Cmd).Trim()) }
+        $chk.Content = $content
+        $chk.Add_Click({ $script:State.Sel[[string]$this.Tag] = [bool]$this.IsChecked; Update-Counts })
+        return $chk
+    }
 }
 
 function Update-Counts {
@@ -1471,7 +1569,7 @@ function Select-Recommended {
     foreach ($r in $diag.Recommend) {
         $tool = $cat.Tools | Where-Object { $_.Id -eq $r.Id } | Select-Object -First 1
         if (-not $tool) { continue }
-        if (-not $firstTab) { $firstTab = $tool.Tab }
+        if (-not $firstTab) { $firstTab = $tool.Tab; $script:State.Pane[$cat.Id + ':' + $tool.Tab] = $tool.Section }
         $key = $cat.Id + ':' + $tool.Id
         if ($tool.Type -eq 'choice') { $script:State.Choice[$key] = $r.Value } else { $script:State.Sel[$key] = $true }
     }
@@ -1662,6 +1760,11 @@ if ($SmokeTest) {
         Show-Page $cat.Id
         foreach ($tab in $cat.Tabs) { $script:State.Tab[$cat.Id] = $tab.Id; Render-Page }
         $script:State.Query = 'dns'; Render-Sections; $script:State.Query = ''
+        if (-not $cat.ComingSoon -and $script:SectionsHost -and $script:SectionsHost.Children.Count -lt 1) { Write-Host ('FAIL nothing rendered on ' + $cat.Id); $errors++ }
+        # Side menu: pick the last section and render again
+        $secs = @($cat.Tools | Where-Object { $_.Type -ne 'quick' -and -not $_.Hidden -and $_.Tab -eq (Get-CurrentTab $cat) } | ForEach-Object { $_.Section } | Select-Object -Unique)
+        if ($secs.Count -gt 1) { $script:State.Pane[(Get-PaneKey)] = $secs[-1]; Render-Sections
+            if ($script:SectionsHost.Children.Count -ne 1) { Write-Host ('FAIL side menu did not render on ' + $cat.Id); $errors++ } }
     }
     $script:State.Page = 'internet'
     $script:State.NetStatus = [pscustomobject]@{ Adapter = 'Ethernet'; AdapterDetail = 'Test'; IPv4 = '192.168.1.42'; Dhcp = $true; Apipa = $false
