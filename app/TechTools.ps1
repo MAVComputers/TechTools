@@ -353,6 +353,25 @@ function Render-Category {
         Render-Status
     }
 
+    # Clear: reset Diagnostics results as if TechTools was just opened
+    $hasReports = @($Cat.Tools | Where-Object { ($_.Effect -eq 'serverstatus' -or $_.Effect -eq 'healthreport') -and $_.Tab -eq $current }).Count -gt 0
+    $busyReports = $null -ne (Get-BusyReportTool) -or (Test-ToolBusy 'servercheck') -or (Test-ToolBusy 'serverreauth')
+    if ($hasReports -and ($script:State.Health -or $script:State.Server -or $script:State.HealthError -or $script:State.ServerError) -and -not $busyReports) {
+        $clr = New-Button 'Clear' -Icon 'trash'
+        $clr.HorizontalAlignment = 'Right'
+        $clr.Margin = '0,-6,0,12'
+        $clr.ToolTip = 'Clear results, finished actions and the console, as if TechTools was just opened. The session log file is kept.'
+        $clr.Add_Click({ Clear-Diagnostics })
+        [void]$p.Children.Add($clr)
+    }
+
+    # Office server card (Windows > Diagnostics)
+    if (@($Cat.Tools | Where-Object { $_.Effect -eq 'serverstatus' -and -not $_.Hidden -and $_.Tab -eq $current }).Count -gt 0) {
+        $script:ServerHost = New-Object Windows.Controls.StackPanel
+        [void]$p.Children.Add($script:ServerHost)
+        Render-Server
+    }
+
     # Quick actions for this tab
     $quick = @($Cat.Tools | Where-Object { $_.Type -eq 'quick' -and -not $_.Hidden -and $_.Tab -eq $current })
     if ($quick.Count -gt 0) {
@@ -387,25 +406,6 @@ function Render-Category {
     # Notices for buttons pressed this session (for example an installer password)
     foreach ($q in $quick) {
         if ($q.Notice -and $script:State.Notices[$q.Id]) { [void]$p.Children.Add((New-NoticeCard $q)) }
-    }
-
-    # Clear: reset Diagnostics results as if TechTools was just opened
-    $hasReports = @($Cat.Tools | Where-Object { ($_.Effect -eq 'serverstatus' -or $_.Effect -eq 'healthreport') -and $_.Tab -eq $current }).Count -gt 0
-    $busyReports = $null -ne (Get-BusyReportTool) -or (Test-ToolBusy 'servercheck') -or (Test-ToolBusy 'serverreauth')
-    if ($hasReports -and ($script:State.Health -or $script:State.Server -or $script:State.HealthError -or $script:State.ServerError) -and -not $busyReports) {
-        $clr = New-Button 'Clear' -Icon 'trash'
-        $clr.HorizontalAlignment = 'Right'
-        $clr.Margin = '0,-6,0,12'
-        $clr.ToolTip = 'Clear results, finished actions and the console, as if TechTools was just opened. The session log file is kept.'
-        $clr.Add_Click({ Clear-Diagnostics })
-        [void]$p.Children.Add($clr)
-    }
-
-    # Office server card (Windows > Diagnostics)
-    if (@($Cat.Tools | Where-Object { $_.Effect -eq 'serverstatus' -and -not $_.Hidden -and $_.Tab -eq $current }).Count -gt 0) {
-        $script:ServerHost = New-Object Windows.Controls.StackPanel
-        [void]$p.Children.Add($script:ServerHost)
-        Render-Server
     }
 
     # PC health report (Windows > Diagnostics)
