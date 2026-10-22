@@ -49,6 +49,8 @@ $script:State = @{
     Notices = @{}; Pane = @{}
 }
 $script:SeenVersion = -1
+$script:Halo = $null
+$script:HaloProblem = ''
 
 $xamlText = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'MainWindow.xaml'), [System.Text.Encoding]::UTF8)
 $script:Window = [Windows.Markup.XamlReader]::Parse($xamlText)
@@ -93,6 +95,7 @@ function New-Text {
 }
 
 $script:Icons = @{
+    send    = 'M22,2 L11,13 M22,2 L15,22 L11,13 L2,9 Z'
     home    = 'M3,11 L12,4 L21,11 M5,10 L5,20 L19,20 L19,10'
     windows = 'M3,3 H11 V11 H3 Z M13,3 H21 V11 H13 Z M3,13 H11 V21 H3 Z M13,13 H21 V21 H13 Z'
     dental  = 'M7,3 C4.5,3 3,5 3,7.5 C3,10.5 4.5,12 5,14.5 C5.5,17.5 6,21 7.5,21 C9,21 9.5,17 12,17 C14.5,17 14,21 15.5,21 C17,21 17.5,17.5 18,14.5 C18.5,12 20,10.5 20,7.5 C20,5 18.5,3 16,3 C14.2,3 13.4,4 12,4 C10.6,4 9.8,3 7,3 Z'
@@ -1204,12 +1207,69 @@ function Request-TeamPassword {
         if ($d.Box.SecurePassword.Length -gt 0) {
             $ok = Test-TTPassword -Password (ConvertFrom-TTSecure $d.Box.SecurePassword) -Auth $auth
         }
-        if ($ok) { return $true }
+        if ($ok) { Open-HaloConfig (ConvertFrom-TTSecure $d.Box.SecurePassword); return $true }
         Start-Sleep -Milliseconds 800
         $problem = 'Wrong password. {0} tries left.' -f (5 - $try)
     }
     [void][Windows.MessageBox]::Show('Too many wrong passwords. TechTools will close.', 'MAV TechTools', 'OK', 'Warning')
     return $false
+}
+
+function Open-HaloConfig {
+    # Reads config/halo.json and unlocks its key with the team password. Key stays in memory only.
+    param([string]$Password)
+    $script:Halo = $null
+    $path = Join-Path (Join-Path $ConfigRoot 'config') 'halo.json'
+    if (-not (Test-Path -LiteralPath $path)) { return }
+    try { $cfg = Read-TTJson $path } catch { return }
+    $secret = Unprotect-TTSecret -Box $cfg.secret -Password $Password
+    if (-not $secret) { $script:HaloProblem = 'The HaloPSA key could not be unlocked with this password.'; return }
+    $script:Halo = @{ Url = [string]$cfg.url; Tenant = [string]$cfg.tenant; ClientId = [string]$cfg.clientId; Outcome = [string]$cfg.outcome; Secret = $secret }
+}
+
+function Show-HaloSend {
+    # Asks for the ticket number, then queues the send job.
+    $res = $script:State.Health
+    if (-not $res) { return }
+    if (-not $script:Halo) {
+        $why = 'HaloPSA is not set up in TechTools yet.'
+        if ($script:HaloProblem) { $why = $script:HaloProblem }
+        [void][Windows.MessageBox]::Show($why, 'MAV TechTools', 'OK', 'Information')
+        return
+    }
+    $title = 'PC Health Check'
+    if ($res.PSObject.Properties['Title'] -and $res.Title) { $title = [string]$res.Title }
+    $ticket = ''
+    while ($true) {
+        $d = New-Dialog 'Send to HaloPSA ticket' ('Adds a private note with the ' + $title + ' summary to the ticket, posted as MAV Tech Tools.') 'Send to ticket'
+        $box = Add-DialogField $d 'Ticket number' $ticket -Hint 'For example 10482'
+        $cb = New-Object Windows.Controls.CheckBox
+        $cb.Content = 'Attach the full report (PDF)'
+        $cb.IsChecked = $true
+        $cb.Foreground = Get-Brush $script:Colors.text
+        $cb.Margin = '0,12,0,0'
+        [void]$d.Panel.Children.Add($cb)
+        $box.Focus() | Out-Null
+        if (-not $d.Window.ShowDialog()) { return }
+        $ticket = $box.Text.Trim()
+        if (Test-TTTicketNumber $ticket) { break }
+        [void][Windows.MessageBox]::Show('Enter the ticket number (digits only).', 'MAV TechTools', 'OK', 'Warning')
+    }
+    $sections = @($res.Sections)
+    $fails = @($sections | Where-Object { $_.Level -eq 'fail' }).Count
+    $warns = @($sections | Where-Object { $_.Level -eq 'warn' }).Count
+    $headline = 'Everything checked looks healthy'
+    if ($fails) { $headline = ('{0} problem(s) and {1} warning(s) found' -f $fails, $warns) }
+    elseif ($warns) { $headline = ('{0} warning(s), nothing failing' -f $warns) }
+    $note = ConvertTo-TTHaloNote -Report $res -Headline $headline -Pc ([string]$res.Pc) -RunBy ($env:USERDOMAIN + '\' + $env:USERNAME)
+    $cat = Get-Cat 'windows'
+    $tool = @($cat.Tools | Where-Object { $_.Id -eq 'halosend' })[0]
+    if (-not $tool) { return }
+    $job = New-TTJob -Category $cat -Tool $tool
+    $job.Name = 'Send ' + $title + ' to HaloPSA #' + $ticket.TrimStart('#')
+    $job.Input = @{ Url = $script:Halo.Url; Tenant = $script:Halo.Tenant; ClientId = $script:Halo.ClientId; Secret = $script:Halo.Secret
+        Outcome = $script:Halo.Outcome; Ticket = $ticket; NoteHtml = $note; Html = [string]$res.Html; AttachPdf = [bool]$cb.IsChecked }
+    Add-Jobs @($job)
 }
 
 function Start-ServerReauth {
@@ -1549,8 +1609,14 @@ function Render-Health {
     $again.IsEnabled = -not $busy
     $again.Tag = $resTool
     $again.Add_Click({ Invoke-Tool $script:State.Page ([string]$this.Tag); Render-Health })
+    $halo = New-Button 'Send to ticket' -Icon 'send'
+    $halo.Margin = '8,0,0,0'
+    $halo.ToolTip = 'Adds the results to a HaloPSA ticket as a private note from MAV Tech Tools'
+    if (-not $script:Halo) { $halo.Opacity = 0.6; $halo.ToolTip = 'HaloPSA is not set up in TechTools yet' }
+    $halo.Add_Click({ Show-HaloSend })
     [void]$btns.Children.Add($again)
     [void]$btns.Children.Add($open)
+    [void]$btns.Children.Add($halo)
     [void]$btns.Children.Add($pdf)
     [void]$dock.Children.Add($btns)
     $who = New-Object Windows.Controls.StackPanel

@@ -35,6 +35,16 @@ only a salted PBKDF2-SHA256 hash. To change it, run
 public), commit `config/auth.json` and merge. This stops casual use only;
 anyone can still read the scripts in this public repo.
 
+**Send to ticket (HaloPSA).** Every report has a **Send to ticket** button: the
+tech enters the ticket number and TechTools adds a private note (report title,
+PC, result, each problem and warning) and attaches the report as a PDF, posted
+by the "MAV Tech Tools" API agent, so techs do not sign in to Halo. The Halo
+client secret is in `config/halo.json`, encrypted (AES-256 + HMAC) with a key
+derived from the team password, and is unlocked in memory when the password is
+entered. Anyone with the team password can unlock it, so give the Halo agent the
+smallest role possible. Set it up with `pwsh -File tools/Set-HaloKey.ps1`;
+`tools/Set-TeamPassword.ps1` re-locks it when the password changes.
+
 How it works on screen:
 
 1. Pick a category in the top menu, then a tab.
