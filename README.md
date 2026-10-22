@@ -13,8 +13,11 @@ PowerShell script you can read.
 On the PC you are working on, open **Terminal (Admin)** or **Windows PowerShell (Admin)** and run:
 
 ```powershell
-irm techtools.mavcomputers.com/run.ps1 | iex
+irm techtools.mavcomputers.com/go | iex
 ```
+
+(`/go` is a short alias for `irm techtools.mavcomputers.com/run.ps1 | iex`, which
+also still works. See `go.html`.)
 
 The launcher downloads the latest version to `%TEMP%\MAVTechTools`, asks for
 admin rights if needed, and opens the window. Each session writes a log to

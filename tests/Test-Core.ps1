@@ -30,6 +30,11 @@ foreach ($f in $ps1) {
     Check "ASCII only: $($f.Name)" ($nonAscii -eq 0) '(Windows PowerShell 5.1 misreads non-ASCII in BOM-less files)'
     Check "parses: $($f.Name)" ((Test-TTScriptSyntax ([System.IO.File]::ReadAllText($f.FullName))).Count -eq 0)
 }
+$go = [System.IO.File]::ReadAllText((Join-Path $root 'go.html'))
+Check 'go.html is ASCII' ($go -notmatch '[^\x00-\x7F]')
+Check 'go.html parses as PowerShell' ((Test-TTScriptSyntax $go).Count -eq 0)
+Check 'go.html hides HTML in a block comment' ($go.StartsWith('<#') -and ([regex]::Matches($go, '#>')).Count -eq 1)
+Check 'go.html runs the launcher' ($go -match "irm 'https://techtools\.mavcomputers\.com/run\.ps1' \| iex")
 $manifest = Read-TTJson (Join-Path $root 'manifest.json')
 $needed = Get-ChildItem -Path (Join-Path $root 'app'), (Join-Path $root 'config') -Recurse -File |
     ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') }
