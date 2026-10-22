@@ -599,9 +599,9 @@ function ConvertTo-TTHtml {
 
 function New-TTHealthReport {
     # Writes a self-contained HTML report and returns its path.
-    param($Sections, [string]$Folder)
+    param($Sections, [string]$Folder, [string]$Title = 'PC Health Check', [string]$Prefix = 'Health', [string]$Lead = '')
     $now = Get-Date
-    $file = Join-Path $Folder ('Health-{0}-{1}.html' -f $env:COMPUTERNAME, $now.ToString('yyyyMMdd-HHmm'))
+    $file = Join-Path $Folder ('{0}-{1}-{2}.html' -f $Prefix, $env:COMPUTERNAME, $now.ToString('yyyyMMdd-HHmmss'))
     $fails = @($Sections | Where-Object { $_.Level -eq 'fail' }).Count
     $warns = @($Sections | Where-Object { $_.Level -eq 'warn' }).Count
     $overall = if ($fails) { 'fail' } elseif ($warns) { 'warn' } else { 'ok' }
@@ -642,10 +642,11 @@ tr.r-warn td{background:#fdf6e3}tr.r-fail td{background:#fdecec}.c-ok{border-col
 @page{margin:12mm}
 '@
     [void]$sb.Append('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">')
-    [void]$sb.Append('<title>PC Health - ' + (ConvertTo-TTHtml $env:COMPUTERNAME) + '</title><style>' + $css + '</style></head><body><main>')
-    [void]$sb.Append('<header><div><div class="brand">MAV COMPUTERS LLC - TECHTOOLS</div><h1>PC Health Check: ' + (ConvertTo-TTHtml $env:COMPUTERNAME) + '</h1></div>')
+    [void]$sb.Append('<title>' + (ConvertTo-TTHtml $Title) + ' - ' + (ConvertTo-TTHtml $env:COMPUTERNAME) + '</title><style>' + $css + '</style></head><body><main>')
+    [void]$sb.Append('<header><div><div class="brand">MAV COMPUTERS LLC - TECHTOOLS</div><h1>' + (ConvertTo-TTHtml $Title) + ': ' + (ConvertTo-TTHtml $env:COMPUTERNAME) + '</h1></div>')
     [void]$sb.Append('<div class="meta">' + $now.ToString('yyyy-MM-dd HH:mm') + '<br>Run by ' + (ConvertTo-TTHtml ($env:USERDOMAIN + '\' + $env:USERNAME)) + '</div></header>')
     [void]$sb.Append('<div class="banner"><span class="dot d-' + $overall + '"></span>' + (ConvertTo-TTHtml $headline) + '</div>')
+    if ($Lead) { [void]$sb.Append('<p class="note n-' + $overall + '" style="font-size:15px">' + (ConvertTo-TTHtml $Lead) + '</p>') }
 
     [void]$sb.Append('<div class="grid">')
     $i = 0

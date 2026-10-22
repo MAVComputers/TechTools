@@ -8,10 +8,18 @@
     "config/categories.json",
     "config/scripts/internet/_shared.ps1",
     "config/scripts/windows/_shared.ps1",
+    "config/scripts/windows/battery.ps1",
+    "config/scripts/windows/crashes.ps1",
+    "config/scripts/windows/diag.ps1",
     "config/scripts/windows/healthcheck.ps1",
+    "config/scripts/windows/printclear.ps1",
+    "config/scripts/windows/printscan.ps1",
+    "config/scripts/windows/repair.ps1",
     "config/scripts/windows/server.ps1",
     "config/scripts/windows/servercheck.ps1",
     "config/scripts/windows/serverreauth.ps1",
+    "config/scripts/windows/slowpc.ps1",
+    "config/scripts/windows/timesync.ps1",
     "config/tools/internet.json",
     "config/tools/windows.json"
   ]

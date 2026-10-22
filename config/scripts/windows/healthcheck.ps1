@@ -50,4 +50,4 @@ $folder = $env:TEMP
 if ($Sync -and $Sync.LogFile) { $folder = Split-Path -Parent $Sync.LogFile }
 $html = New-TTHealthReport -Sections $sections -Folder $folder
 Write-Info ('Report saved: ' + $html)
-Set-Result ([pscustomobject]@{ Sections = @($sections); Html = $html; At = (Get-Date); Pc = $env:COMPUTERNAME })
+Set-Result ([pscustomobject]@{ Sections = @($sections); Html = $html; At = (Get-Date); Pc = $env:COMPUTERNAME; Title = 'PC Health Check'; Tool = 'healthcheck'; Lead = ''; LeadLevel = '' })

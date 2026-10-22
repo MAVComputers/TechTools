@@ -304,6 +304,15 @@ function Write-Step {
     $Sync.Version++
     Send-TTLog $Text 'step'
 }
+# Progress inside the current step (0-100), for long steps like SFC or a 30 s sample.
+function Set-TTProgress {
+    param([double]$Percent, [string]$Text = '')
+    $j = $script:TTJob
+    $p = [math]::Min(100.0, [math]::Max(0.0, $Percent))
+    $j.Percent = [int][math]::Floor(100 * (([int]$j.Step - 1) + $p / 100.0) / [math]::Max(1.0, [double]$j.Steps))
+    if ($Text) { $j.StepText = $Text }
+    $Sync.Version++
+}
 function Write-Info { param([string]$Text) Send-TTLog $Text 'plain' }
 function Write-Warn { param([string]$Text) $script:TTJob.Warnings = [int]$script:TTJob.Warnings + 1; Send-TTLog $Text 'warn' }
 function Set-Result { param($Value) $script:TTJob.Result = $Value }

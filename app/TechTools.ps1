@@ -385,7 +385,7 @@ function Render-Category {
 
     # Clear: reset Diagnostics results as if TechTools was just opened
     $hasReports = @($Cat.Tools | Where-Object { ($_.Effect -eq 'serverstatus' -or $_.Effect -eq 'healthreport') -and $_.Tab -eq $current }).Count -gt 0
-    $busyReports = (Test-ToolBusy 'healthcheck') -or (Test-ToolBusy 'servercheck') -or (Test-ToolBusy 'serverreauth')
+    $busyReports = $null -ne (Get-BusyReportTool) -or (Test-ToolBusy 'servercheck') -or (Test-ToolBusy 'serverreauth')
     if ($hasReports -and ($script:State.Health -or $script:State.Server -or $script:State.HealthError -or $script:State.ServerError) -and -not $busyReports) {
         $clr = New-Button 'Clear' -Icon 'trash'
         $clr.HorizontalAlignment = 'Right'
@@ -1139,22 +1139,37 @@ function New-HealthSection {
     return $card
 }
 
+function Get-BusyReportTool {
+    # The report tool (effect healthreport) that is queued or running on this page, if any.
+    $cat = $script:Catalog | Where-Object { $_.Id -eq $script:State.Page }
+    if (-not $cat) { return $null }
+    foreach ($t in @($cat.Tools | Where-Object { $_.Effect -eq 'healthreport' })) {
+        if (Test-ToolBusy $t.Id) { return $t }
+    }
+    return $null
+}
+
 function Render-Health {
     $h = $script:HealthHost
     if ($null -eq $h) { return }
     $h.Children.Clear()
     $res = $script:State.Health
-    $busy = Test-ToolBusy 'healthcheck'
+    $busyTool = Get-BusyReportTool
+    $busy = $null -ne $busyTool
+    $resTool = 'healthcheck'
+    if ($res -and $res.PSObject.Properties['Tool'] -and $res.Tool) { $resTool = [string]$res.Tool }
+    # A different check is running: show that instead of the old report.
+    if ($busy -and $res -and $busyTool.Id -ne $resTool) { $res = $null }
 
     if ($null -eq $res) {
         $card = New-Card -Padding '22'
         $sp = New-Object Windows.Controls.StackPanel
         if ($busy) {
-            [void]$sp.Children.Add((New-Text 'Health check running...' -Size 17 -Weight SemiBold))
-            [void]$sp.Children.Add((New-Text 'This takes 1-3 minutes. Progress shows in the Action Center; the results will appear here.' -Color $script:Colors.muted -Wrap -Margin '0,6,0,0'))
+            [void]$sp.Children.Add((New-Text ($busyTool.Label + ' running...') -Size 17 -Weight SemiBold))
+            [void]$sp.Children.Add((New-Text 'Progress shows in the Action Center; the results will appear here.' -Color $script:Colors.muted -Wrap -Margin '0,6,0,0'))
         } else {
-            [void]$sp.Children.Add((New-Text 'No health check yet' -Size 17 -Weight SemiBold))
-            $msg = 'Press "Run PC health check" above. It only reads information and changes nothing on the PC.'
+            [void]$sp.Children.Add((New-Text 'No results yet' -Size 17 -Weight SemiBold))
+            $msg = 'Press one of the buttons above. The results show here, and you can save them as a PDF.'
             if ($script:State.HealthError) { $msg = 'The last check failed: ' + $script:State.HealthError }
             [void]$sp.Children.Add((New-Text $msg -Color $script:Colors.muted -Wrap -Margin '0,6,0,0'))
         }
@@ -1192,13 +1207,16 @@ function Render-Health {
     $again = New-Button 'Run again' -Icon 'refresh'
     $again.Margin = '8,0,0,0'
     $again.IsEnabled = -not $busy
-    $again.Add_Click({ Invoke-Tool $script:State.Page 'healthcheck'; Render-Health })
+    $again.Tag = $resTool
+    $again.Add_Click({ Invoke-Tool $script:State.Page ([string]$this.Tag); Render-Health })
     [void]$btns.Children.Add($again)
     [void]$btns.Children.Add($open)
     [void]$btns.Children.Add($pdf)
     [void]$dock.Children.Add($btns)
     $who = New-Object Windows.Controls.StackPanel
-    [void]$who.Children.Add((New-Text 'PC HEALTH REPORT' -Size 11 -Color $script:Colors.accent -Mono))
+    $title = 'PC Health Check'
+    if ($res.PSObject.Properties['Title'] -and $res.Title) { $title = [string]$res.Title }
+    [void]$who.Children.Add((New-Text $title.ToUpper() -Size 11 -Color $script:Colors.accent -Mono))
     [void]$who.Children.Add((New-Text ([string]$res.Pc) -Size 24 -Weight SemiBold -Margin '0,2,0,4'))
     $line = New-Object Windows.Controls.StackPanel
     $line.Orientation = 'Horizontal'
@@ -1210,6 +1228,13 @@ function Render-Health {
     if ($busy) { $when = 'Running a new check...' }
     [void]$line.Children.Add((New-Text $when -Size 11 -Color $script:Colors.muted -Mono -Margin '14,3,0,0'))
     [void]$who.Children.Add($line)
+    if ($res.PSObject.Properties['Lead'] -and $res.Lead) {
+        $lv = 'info'
+        if ($res.LeadLevel) { $lv = [string]$res.LeadLevel }
+        $leadCol = $script:Colors.text
+        if ($script:Colors.ContainsKey($lv)) { $leadCol = $script:Colors[$lv] }
+        [void]$who.Children.Add((New-Text ([string]$res.Lead) -Size 14 -Weight SemiBold -Color $leadCol -Wrap -Margin '0,10,0,0'))
+    }
     [void]$dock.Children.Add($who)
     $top.Child = $dock
     [void]$h.Children.Add($top)
@@ -1263,7 +1288,7 @@ function Find-Edge {
 
 function Save-HealthPdf {
     $res = $script:State.Health
-    if (-not $res -or -not (Test-Path $res.Html)) { Add-ConsoleLine 'Run the health check first.' 'warn'; return }
+    if (-not $res -or -not (Test-Path $res.Html)) { Add-ConsoleLine 'Run a check first.' 'warn'; return }
     $pdf = [System.IO.Path]::ChangeExtension($res.Html, '.pdf')
     $edge = Find-Edge
     if (-not $edge) {
@@ -1521,6 +1546,11 @@ if ($SmokeTest) {
     $script:State.Health = [pscustomobject]@{ Sections = @($okSec, $fakeSec); Html = (Join-Path $env:TEMP 'none.html'); At = (Get-Date); Pc = 'TEST-PC' }
     Render-Page
     if ($null -eq $script:HealthHost -or $script:HealthHost.Children.Count -lt 4) { Write-Host 'FAIL health report did not render'; $errors++ }
+    # Another report type (Slow PC check) with a likely-cause line
+    $script:State.Health = [pscustomobject]@{ Sections = @($okSec, $fakeSec); Html = (Join-Path $env:TEMP 'none.html'); At = (Get-Date); Pc = 'TEST-PC'
+        Title = 'Slow PC Check'; Tool = 'slowpc'; Lead = 'Likely cause: C: drive is nearly full (4 GB free).'; LeadLevel = 'fail' }
+    Render-Page
+    if ($null -eq $script:HealthHost -or $script:HealthHost.Children.Count -lt 4) { Write-Host 'FAIL slow PC report did not render'; $errors++ }
     $script:State.Server = [pscustomobject]@{ Configured = $true; Unc = '\\OFFICE-SRV\Data'; Server = 'OFFICE-SRV'; Share = 'Data'; Drive = 'S:'
         Level = 'fail'; Headline = 'Login problem: the server rejected the saved login'; NeedsAuth = $true; NeedsTrust = $true
         SavedUser = 'OFFICE-SRV\frontdesk'; ConsoleUser = 'PC\frontdesk'; SameUser = $true; Drives = @(); At = (Get-Date)

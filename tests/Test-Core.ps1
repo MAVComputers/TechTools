@@ -67,7 +67,8 @@ foreach ($j in @(
     (New-TTJob -Category $cat -Tool (& $mk 'bad' "Write-Step 'boom'`nthrow 'broken on purpose'")),
     (New-TTJob -Category $cat -Tool (& $mk 'cmdletfail' "Write-Step 'missing'`nGet-Item -Path '/definitely/not/here'")),
     (New-TTJob -Category $cat -Tool (& $mk 'warn' "Write-Step 'w'`nWrite-Warn 'careful'")),
-    (New-TTJob -Category $cat -Tool (& $mk 'r' "Write-Step 'x'"))
+    (New-TTJob -Category $cat -Tool (& $mk 'r' "Write-Step 'x'")),
+    (New-TTJob -Category $cat -Tool (& $mk 'prog' "Write-Step 'a'`nWrite-Step 'b'`nSet-TTProgress 50 'half way'`nSet-Result @(`$script:TTJob.Percent, `$script:TTJob.StepText)"))
 )) { [void]$sync.Jobs.Add($j) }
 $sync.Jobs[4].Status = 'cancelled'
 Invoke-TTJobsNow -Sync $sync
@@ -79,6 +80,7 @@ Check 'throw marks job failed' ($byId.bad.Status -eq 'failed' -and $byId.bad.Err
 Check 'cmdlet error fails job' ($byId.cmdletfail.Status -eq 'failed')
 Check 'warnings counted' ($byId.warn.Status -eq 'done' -and $byId.warn.Warnings -eq 1)
 Check 'cancelled job skipped' ($byId.r.Status -eq 'cancelled')
+Check 'progress inside a step' ($byId.prog.Result[0] -eq 75 -and $byId.prog.Result[1] -eq 'half way') ("(got $($byId.prog.Result -join ', '))")
 $lines = @(); $l = $null; while ($sync.Log.TryDequeue([ref]$l)) { $lines += $l }
 Check 'log has output line' (@($lines | Where-Object { $_.Text -eq 'hello' }).Count -eq 1)
 Check 'log has failure line' (@($lines | Where-Object { $_.Tone -eq 'fail' }).Count -eq 2)
@@ -130,6 +132,39 @@ Check 'report escapes HTML' ($html -match '&lt;b&gt;bad&lt;/b&gt; &amp; worse' -
 Check 'report shows problem count' ($html -match '2 problem\(s\)')
 Remove-Item $report -Force
 
+Write-Host 'More diagnostics'
+foreach ($id in @('slowpc', 'printscan', 'printclear', 'crashes', 'repair', 'battery', 'timesync')) {
+    $t = @($win.Tools | Where-Object { $_.Id -eq $id })[0]
+    Check "$id is a report button on Diagnostics" ($t -and $t.Type -eq 'quick' -and $t.Tab -eq 'diag' -and $t.Effect -eq 'healthreport' -and -not $t.Hidden -and (Get-TTStepCount $t.Script) -ge 3)
+}
+$base = [pscustomobject]@{ CpuAvg = 10; CpuTop = ''; MemAvg = 40; MemTop = 'chrome'; DiskAvg = 5; Kind = 'M.2 NVMe SSD'; FreePct = 60; FreeGb = 200; Days = 1; FastStartup = $false; Startup = 5; Plan = 'Balanced' }
+$c = Get-TTSlowCause $base
+Check 'healthy PC: no clear cause' ($c.Level -eq 'ok' -and $c.Text -match 'No clear cause')
+$x = $base.PSObject.Copy(); $x.FreePct = 4; $x.FreeGb = 9; $x.Days = 20
+$c = Get-TTSlowCause $x
+Check 'full C: drive is the likely cause' ($c.Level -eq 'fail' -and $c.Text -match 'nearly full' -and @($c.All).Count -eq 2)
+$x = $base.PSObject.Copy(); $x.DiskAvg = 95; $x.Kind = 'HDD (SATA)'
+Check 'busy hard drive blames the HDD' ((Get-TTSlowCause $x).Text -match 'SSD would fix')
+$x = $base.PSObject.Copy(); $x.CpuAvg = 92; $x.CpuTop = 'MsMpEng'
+Check 'busy CPU names the process' ((Get-TTSlowCause $x).Text -match 'MsMpEng')
+$x = $base.PSObject.Copy(); $x.Days = 12; $x.FastStartup = $true
+Check 'long uptime says Restart not Shut down' ((Get-TTSlowCause $x).Text -match 'Restart, not Shut down')
+Check 'bugcheck 0x116 is the graphics driver' ((Get-TTBugcheckInfo '0x00000116').Name -eq 'VIDEO_TDR_FAILURE')
+Check 'bugcheck 0x9F named' ((Get-TTBugcheckInfo '0x0000009f').Name -eq 'DRIVER_POWER_STATE_FAILURE')
+Check 'unknown bugcheck kept as code' ((Get-TTBugcheckInfo '0x00000abc').Name -match '0xABC')
+$off = ConvertFrom-TTStripchart @('Tracking time.windows.com [1.2.3.4:123].', '14:05:01, +00.0153257s', '14:05:03, error: 0x800705B4', '14:05:05, -01.5000000s')
+Check 'clock offsets read from w32tm' ($off.Count -eq 2 -and [math]::Abs($off[0] - 0.0153257) -lt 0.0001 -and $off[1] -eq -1.5)
+Check 'SFC clean result' ((Get-TTSfcOutcome 'Windows Resource Protection did not find any integrity violations.').Level -eq 'ok')
+Check 'SFC repaired result' ((Get-TTSfcOutcome 'Windows Resource Protection found corrupt files and successfully repaired them.').Repaired)
+Check 'SFC partial result fails' ((Get-TTSfcOutcome 'Windows Resource Protection found corrupt files but was unable to fix some of them.').Level -eq 'fail')
+Check 'DISM missing source explained' ((Get-TTDismOutcome 'Error: 0x800f081f The source files could not be found.' 1).Text -match 'download repair files')
+$req = ConvertFrom-TTPowerRequests @('DISPLAY:', 'None.', '', 'SYSTEM:', '[DRIVER] Realtek High Definition Audio (HDAUDIO\FUNC_01)', 'An audio stream is currently in use.', '[PROCESS] \Device\HarddiskVolume3\Program Files\App\app.exe', '', 'AWAYMODE:', 'None.')
+Check 'sleep blockers read from powercfg' ($req.Count -eq 2 -and $req[0].Blocks -eq 'SYSTEM' -and $req[0].Reason -match 'audio' -and $req[1].Who -eq 'app.exe')
+$rep = New-TTHealthReport -Sections @($sec) -Folder $tmp -Title 'Slow PC Check' -Prefix 'SlowPC' -Lead 'Likely cause: test'
+$html = [System.IO.File]::ReadAllText($rep)
+Check 'report uses its own title and name' ((Split-Path -Leaf $rep) -like 'SlowPC-*' -and $html -match '<h1>Slow PC Check:' -and $html -match 'Likely cause: test')
+Remove-Item $rep -Force
+
 Write-Host 'Office server'
 $x = Split-TTUnc '\\OFFICE-SRV\Data\Sub\'
 Check 'UNC path split' ($x.Server -eq 'OFFICE-SRV' -and $x.Share -eq 'Data' -and $x.Root -eq '\\OFFICE-SRV\Data')
@@ -155,6 +190,30 @@ if ($env:OS -eq 'Windows_NT') {
         Check "live check runs: $k" ($r.Summary -notmatch '^Could not check') ("($($r.Summary))")
         Write-Host ('       {0}: {1}' -f $r.Level, $r.Summary)
     }
+
+    $more = [ordered]@{ Uptime = { Get-TTUptimeSection }; 'Slow sample' = { Get-TTPressureSection (Get-TTSlowSample -Seconds 4) }
+        'C: drive' = { Get-TTSystemDriveSection }; Startup = { Get-TTStartupSection }; Spooler = { Get-TTSpoolerSection }
+        'Printer reach' = { Get-TTPrintersSection }; 'Print queue' = { Get-TTPrintJobsSection }; Scanners = { Get-TTScannersSection }
+        BSOD = { Get-TTBsodSection }; Shutdowns = { Get-TTShutdownSection }; 'App crashes' = { Get-TTAppCrashSection }
+        Battery = { Get-TTBatterySection -Folder $tmp }; 'Power plan' = { Get-TTPowerPlanSection -HasBattery $false }; Sleep = { Get-TTSleepSection }
+        Domain = { Get-TTDomainSection }; Clock = { Get-TTTimeSection -Dc '' } }
+    foreach ($k in $more.Keys) {
+        $r = Invoke-TTHealthPart $k $more[$k]
+        Check "live check runs: $k" ($r.Summary -notmatch '^Could not check') ("($($r.Summary))")
+        Write-Host ('       {0}: {1}' -f $r.Level, $r.Summary)
+    }
+    # Whole tool scripts through the real worker (the read-only ones).
+    $wsync = New-TTSync -LogFile (Join-Path $tmp 'tt-test.log')
+    foreach ($id in @('printscan', 'crashes', 'battery', 'timesync')) {
+        [void]$wsync.Jobs.Add((New-TTJob -Category $win -Tool (@($win.Tools | Where-Object { $_.Id -eq $id })[0])))
+    }
+    Invoke-TTJobsNow -Sync $wsync
+    foreach ($j in $wsync.Jobs) {
+        $ok = $j.Status -eq 'done' -and $j.Result -and $j.Result.Tool -and (Test-Path $j.Result.Html) -and @($j.Result.Sections).Count -ge 1
+        Check "tool runs end to end: $($j.ToolId)" $ok ("($($j.Status) $($j.Error))")
+        if ($j.Result -and $j.Result.Html) { Remove-Item $j.Result.Html -Force -ErrorAction SilentlyContinue }
+    }
+    $l = $null; while ($wsync.Log.TryDequeue([ref]$l)) { if ($l.Tone -eq 'fail') { Write-Host ('       ' + $l.Text) } }
 
     if (-not ('TTCred' -as [type])) { Add-Type -TypeDefinition $script:TTCredSource -Language CSharp }
     Check 'Credential Manager helper compiles' ([bool]('TTCred' -as [type]))
