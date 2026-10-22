@@ -7,6 +7,7 @@
     "app/TechTools.ps1",
     "config/auth.json",
     "config/categories.json",
+    "config/halo.json",
     "config/scripts/common/halo.ps1",
     "config/scripts/common/installer.ps1",
     "config/scripts/dental/mouthwatch.ps1",
