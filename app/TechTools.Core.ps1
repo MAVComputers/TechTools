@@ -457,3 +457,43 @@ function Get-TTStatusCards {
     else { $cards += [pscustomobject]@{ Label = 'Public IP'; Value = 'Unknown'; Detail = 'Lookup failed'; Level = 'warn' } }
     return $cards
 }
+
+# ------------------------------------------------------- startup password ---
+# The team password is never stored. config/auth.json holds only a salted
+# PBKDF2-SHA256 hash, so a long password is needed because the repo is public.
+# Change it with: pwsh -File tools/Set-TeamPassword.ps1
+function Get-TTPasswordHash {
+    param([string]$Password, [byte[]]$Salt, [int]$Iterations)
+    $kdf = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($Password, $Salt, $Iterations, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    try { return $kdf.GetBytes(32) } finally { $kdf.Dispose() }
+}
+
+function New-TTAuthRecord {
+    param([string]$Password, [int]$Iterations = 600000)
+    $salt = New-Object byte[] 16
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($salt) } finally { $rng.Dispose() }
+    $hash = Get-TTPasswordHash -Password $Password -Salt $salt -Iterations $Iterations
+    return [ordered]@{ kdf = 'pbkdf2-sha256'; iterations = $Iterations; salt = [Convert]::ToBase64String($salt); hash = [Convert]::ToBase64String($hash) }
+}
+
+function Test-TTPassword {
+    # True when $Password matches the auth record. Compares in constant time.
+    param([string]$Password, $Auth)
+    if (-not $Auth -or [string]$Auth.kdf -ne 'pbkdf2-sha256' -or -not $Password) { return $false }
+    $iter = [int]$Auth.iterations
+    if ($iter -lt 100000) { return $false }
+    $want = [Convert]::FromBase64String([string]$Auth.hash)
+    $got = Get-TTPasswordHash -Password $Password -Salt ([Convert]::FromBase64String([string]$Auth.salt)) -Iterations $iter
+    if ($want.Length -ne $got.Length) { return $false }
+    $diff = 0
+    for ($i = 0; $i -lt $want.Length; $i++) { $diff = $diff -bor ($want[$i] -bxor $got[$i]) }
+    return ($diff -eq 0)
+}
+
+function ConvertFrom-TTSecure {
+    # Plain text of a SecureString, for hashing only. Never log the result.
+    param([Security.SecureString]$Secure)
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+}
