@@ -82,7 +82,7 @@ function Get-TTHealthSystem {
     $total = [double]$cs.TotalPhysicalMemory
     $free = [double]$os.FreePhysicalMemory * 1KB
     $used = $total - $free
-    $pct = [math]::Round(100 * $used / [math]::Max(1, $total))
+    $pct = [math]::Round(100 * $used / [math]::Max(1.0, $total))
     $uptime = (Get-Date) - $os.LastBootUpTime
     $memLevel = 'ok'
     if ($pct -ge 90) { $memLevel = 'fail' } elseif ($pct -ge 80) { $memLevel = 'warn' }
@@ -244,7 +244,6 @@ function Get-TTHealthNetwork {
         $dns = @($c.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | ForEach-Object { $_.ServerAddresses }) -join ', '
         $lv = 'ok'
         if ($ip4 -and ([string]$ip4.IPAddress).StartsWith('169.254.')) { $lv = 'fail' }
-        elseif (-not $gw) { $lv = 'warn' }
         Set-TTLevel $s $lv
         [pscustomobject]@{
             Adapter = $c.InterfaceAlias
@@ -263,7 +262,7 @@ function Get-TTHealthNetwork {
     if (@($rows | Where-Object { $_.IP -like '169.254.*' }).Count -gt 0) { Add-TTNote $s 'A 169.254.x.x address means the PC did not get an address from DHCP.' 'fail' }
     $main = @($rows | Where-Object { $_.Gateway })[0]
     if ($main) { $s.Summary = '{0} on {1}, gateway {2}' -f $main.IP, $main.Adapter, $main.Gateway }
-    else { $s.Summary = 'Connected, but no default gateway' }
+    else { $s.Summary = 'Connected, but no default gateway'; Set-TTLevel $s 'warn'; Add-TTNote $s 'No adapter has a default gateway, so this PC cannot reach the internet.' 'warn' }
     return $s
 }
 
@@ -333,10 +332,10 @@ function Get-TTHealthSpeed {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     # A small sample first, then a test sized to take about 5 seconds.
     $probe = Measure-TTTransfer down 2000000
-    $size = [int][math]::Min(100000000, [math]::Max(5000000, $probe * 1e6 / 8 * 5))
+    $size = [int][math]::Min(100000000.0, [math]::Max(5000000.0, $probe * 1e6 / 8 * 5))
     $down = Measure-TTTransfer down $size
     $upProbe = Measure-TTTransfer up 1000000
-    $upSize = [int][math]::Min(25000000, [math]::Max(2000000, $upProbe * 1e6 / 8 * 5))
+    $upSize = [int][math]::Min(25000000.0, [math]::Max(2000000.0, $upProbe * 1e6 / 8 * 5))
     $up = Measure-TTTransfer up $upSize
     $lv = 'ok'
     if ($down -lt 5) { $lv = 'fail' } elseif ($down -lt 25 -or $up -lt 3) { $lv = 'warn' }
@@ -388,7 +387,7 @@ function Get-TTHealthProcesses {
         [pscustomobject]@{
             Process = ($p.Name -replace '#\d+$', '')
             PID     = $p.IDProcess
-            CPU     = ('{0:N1}%' -f ([double]$p.PercentProcessorTime / [math]::Max(1, $cores)))
+            CPU     = ('{0:N1}%' -f ([double]$p.PercentProcessorTime / [math]::Max(1.0, $cores)))
             Memory  = Format-TTBytes ([double]$p.WorkingSetPrivate)
         }
     }
@@ -396,7 +395,7 @@ function Get-TTHealthProcesses {
     $byMem = $procs | Sort-Object { [double]$_.WorkingSetPrivate } -Descending | Select-Object -First 10
     Add-TTTable $s 'Top 10 by CPU (right now)' @('Process', 'PID', 'CPU', 'Memory') @($byCpu | ForEach-Object { & $toRow $_ })
     Add-TTTable $s 'Top 10 by memory' @('Process', 'PID', 'CPU', 'Memory') @($byMem | ForEach-Object { & $toRow $_ })
-    $total = ($procs | Measure-Object -Property PercentProcessorTime -Sum).Sum / [math]::Max(1, $cores)
+    $total = ($procs | Measure-Object -Property PercentProcessorTime -Sum).Sum / [math]::Max(1.0, $cores)
     $top = @($byMem)[0]
     $s.Summary = 'CPU {0:N0}% busy; biggest memory user: {1} ({2})' -f $total, ($top.Name -replace '#\d+$', ''), (Format-TTBytes ([double]$top.WorkingSetPrivate))
     if ($total -ge 90) { $s.Level = 'warn'; Add-TTNote $s 'CPU is almost fully busy.' 'warn' }
