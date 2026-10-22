@@ -1103,14 +1103,84 @@ function Show-LoginDialog {
 }
 
 function New-LockDialog {
-    # The startup password window. Returns @{ Window; Panel; Box }.
+    # The startup password window, styled like the demo: borderless dark card,
+    # MAV logo, centered title. Returns @{ Window; Panel; Box }.
     param([string]$Problem = '')
-    $d = New-Dialog 'Unlock TechTools' 'Enter the MAV team password to open TechTools.' 'Unlock'
-    $d.Window.ShowInTaskbar = $true
-    $d.Window.Topmost = $true
-    $d.Window.WindowStartupLocation = 'CenterScreen'
+    $w = New-Object Windows.Window
+    $w.Title = 'MAV TechTools - Unlock'
+    $w.Width = 440
+    $w.SizeToContent = 'Height'
+    $w.ResizeMode = 'NoResize'
+    $w.WindowStyle = 'None'
+    $w.AllowsTransparency = $true
+    $w.Background = [Windows.Media.Brushes]::Transparent
+    $w.FontFamily = 'Segoe UI'
+    $w.ShowInTaskbar = $true
+    $w.Topmost = $true
+    $w.WindowStartupLocation = 'CenterScreen'
+    $w.Resources = $script:Window.Resources
+    $w.Add_MouseLeftButtonDown({ try { $this.DragMove() } catch { } })
+
+    $card = New-Object Windows.Controls.Border
+    $card.Margin = '20'
+    $card.CornerRadius = '16'
+    $card.Background = Get-Brush '#0A1019'
+    $card.BorderBrush = Get-Brush '#263449'
+    $card.BorderThickness = '1'
+    $card.Padding = '28,26,28,24'
+    $fx = New-Object Windows.Media.Effects.DropShadowEffect
+    $fx.Color = [Windows.Media.Colors]::Black; $fx.BlurRadius = 30; $fx.ShadowDepth = 6; $fx.Opacity = 0.55
+    $card.Effect = $fx
+
+    $outer = New-Object Windows.Controls.StackPanel
+    try {
+        $logo = New-Object Windows.Shapes.Path
+        $logo.Data = [Windows.Media.Geometry]::Parse(([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'logo.path.txt'))).Trim())
+        $logo.Fill = Get-Brush '#24A7E0'
+        $logo.Stretch = 'Uniform'
+        $glow = New-Object Windows.Media.Effects.DropShadowEffect
+        $glow.Color = [Windows.Media.ColorConverter]::ConvertFromString('#24A7E0'); $glow.BlurRadius = 14; $glow.ShadowDepth = 0; $glow.Opacity = 0.55
+        $logo.Effect = $glow
+        $vb = New-Object Windows.Controls.Viewbox
+        $vb.Width = 64; $vb.Height = 64
+        $vb.HorizontalAlignment = 'Center'
+        $vb.Margin = '0,0,0,10'
+        $vb.Child = $logo
+        [void]$outer.Children.Add($vb)
+    } catch { }
+    $title = New-Text 'Unlock TechTools' -Size 21 -Weight SemiBold
+    $title.HorizontalAlignment = 'Center'
+    [void]$outer.Children.Add($title)
+    $msg = New-Text 'Enter the MAV team password to open TechTools.' -Color $script:Colors.muted -Wrap -Margin '0,6,0,16'
+    $msg.HorizontalAlignment = 'Center'; $msg.TextAlignment = 'Center'
+    [void]$outer.Children.Add($msg)
+
+    $panel = New-Object Windows.Controls.StackPanel
+    [void]$outer.Children.Add($panel)
+    $d = @{ Window = $w; Panel = $panel }
     $box = Add-DialogField $d 'Team password' -Password
-    if ($Problem) { [void]$d.Panel.Children.Add((New-Text $Problem -Size 12 -Color $script:Colors.fail -Wrap -Margin '0,8,0,0')) }
+    $box.Padding = '10,9'
+    if ($Problem) { [void]$panel.Children.Add((New-Text $Problem -Size 13 -Color $script:Colors.fail -Wrap -Margin '0,8,0,0')) }
+    [void]$panel.Children.Add((New-Text '5 wrong tries closes TechTools.' -Size 12 -Color $script:Colors.muted -Wrap -Margin '0,8,0,0'))
+
+    $row = New-Object Windows.Controls.StackPanel
+    $row.Orientation = 'Horizontal'
+    $row.HorizontalAlignment = 'Right'
+    $row.Margin = '0,20,0,0'
+    $cancel = New-Button 'Cancel'
+    $cancel.IsCancel = $true
+    $cancel.Margin = '0,0,8,0'
+    [void]$row.Children.Add($cancel)
+    $ok = New-Button 'Unlock' -Style 'PrimaryBtn'
+    $ok.IsDefault = $true
+    $ok.Padding = '18,0'
+    $ok.Tag = $w
+    $ok.Add_Click({ $this.Tag.DialogResult = $true })
+    [void]$row.Children.Add($ok)
+    [void]$outer.Children.Add($row)
+
+    $card.Child = $outer
+    $w.Content = $card
     $d.Box = $box
     return $d
 }
