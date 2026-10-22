@@ -20,6 +20,19 @@ $script:Version = '0.1.0'
 try { $script:Version = [string](Read-TTJson (Join-Path $ConfigRoot 'manifest.json')).version } catch { }
 
 $script:IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# TechTools always runs elevated so every script and install has admin rights.
+# If started without them, restart through UAC. A tech without admin rights can
+# type an admin account in the UAC prompt. If UAC is refused, stop here.
+if (-not $script:IsAdmin -and -not $SmokeTest) {
+    try {
+        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @('-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+            '-File', ('"' + $PSCommandPath + '"'), '-ConfigRoot', ('"' + $ConfigRoot.TrimEnd('\') + '"'))
+    } catch {
+        [void][System.Windows.MessageBox]::Show(('TechTools needs administrator rights so its scripts and installs work.' + [Environment]::NewLine + [Environment]::NewLine +
+            'Start it again and choose Yes in the Windows prompt, or enter an admin account if asked.'), 'MAV TechTools', 'OK', 'Warning')
+    }
+    exit
+}
 $script:LogDir = Join-Path $env:ProgramData 'MAVTechTools\Logs'
 try { New-Item -ItemType Directory -Path $script:LogDir -Force | Out-Null } catch {
     $script:LogDir = Join-Path $env:LOCALAPPDATA 'MAVTechTools\Logs'

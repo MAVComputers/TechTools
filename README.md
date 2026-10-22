@@ -20,7 +20,12 @@ irm techtools.mavcomputers.com/go | iex
 also still works. See `go.html`.)
 
 The launcher downloads the latest version to `%TEMP%\MAVTechTools`, asks for
-admin rights if needed, and opens the window. Each session writes a log to
+admin rights if needed, and opens the window. TechTools always runs as
+administrator, so every script and install has admin rights: if it is started
+without them it restarts through the Windows (UAC) prompt, where a tech without
+admin rights can enter an admin account. If the prompt is refused, it does not
+start. (One step runs as the signed-in user on purpose: after a server
+re-authenticate, drives are remapped in that user's own session.) Each session writes a log to
 `C:\ProgramData\MAVTechTools\Logs` (the **Open logs** button opens it).
 
 How it works on screen:

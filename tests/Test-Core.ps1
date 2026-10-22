@@ -35,6 +35,10 @@ Check 'go.html is ASCII' ($go -notmatch '[^\x00-\x7F]')
 Check 'go.html parses as PowerShell' ((Test-TTScriptSyntax $go).Count -eq 0)
 Check 'go.html hides HTML in a block comment' ($go.StartsWith('<#') -and ([regex]::Matches($go, '#>')).Count -eq 1)
 Check 'go.html runs the launcher' ($go -match "irm 'https://techtools\.mavcomputers\.com/run\.ps1' \| iex")
+$launcher = [System.IO.File]::ReadAllText((Join-Path $root 'run.ps1'))
+$appMain = [System.IO.File]::ReadAllText((Join-Path $root 'app/TechTools.ps1'))
+Check 'launcher restarts elevated before downloading' ($launcher.IndexOf('-Verb RunAs') -gt 0 -and $launcher.IndexOf('-Verb RunAs') -lt $launcher.IndexOf('# Download the app.'))
+Check 'app restarts elevated and exits when not admin' ($appMain -match '(?s)if \(-not \$script:IsAdmin -and -not \$SmokeTest\).{0,400}-Verb RunAs.{0,600}\bexit\b')
 $manifest = Read-TTJson (Join-Path $root 'manifest.json')
 $needed = Get-ChildItem -Path (Join-Path $root 'app'), (Join-Path $root 'config') -Recurse -File |
     ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') }

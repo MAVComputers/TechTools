@@ -1,5 +1,5 @@
 # MAV TechTools launcher.
-# Techs start the toolkit from an admin PowerShell window with:
+# Techs start the toolkit from any PowerShell window (it asks for admin rights) with:
 #     irm techtools.mavcomputers.com/run.ps1 | iex
 # It downloads the latest app files to a temp folder and opens the window.
 # Nothing is installed. Keep this file ASCII-only.
@@ -29,14 +29,18 @@
     }
     if (-not $base) { Write-Host '  Could not reach the TechTools download site. Check the internet connection.' -ForegroundColor Red; return }
 
-    # Most repairs need admin rights: restart elevated if needed.
+    # TechTools always runs elevated: restart through UAC if needed. A tech without
+    # admin rights can type an admin account in the UAC prompt.
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
         Write-Host '  Asking for administrator rights...'
         $cmd = "`$env:MAVTT_BASE='$base'; irm '$base/run.ps1' | iex"
         try {
             Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd)
-        } catch { Write-Host '  Administrator rights were not granted. TechTools needs them for most repairs.' -ForegroundColor Yellow }
+        } catch {
+            Write-Host '  TechTools was not started: it needs administrator rights.' -ForegroundColor Red
+            Write-Host '  Run the command again and choose Yes in the Windows prompt (or enter an admin account).' -ForegroundColor Yellow
+        }
         return
     }
 
