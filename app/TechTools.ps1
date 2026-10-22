@@ -485,13 +485,17 @@ function Render-Sections {
         $card.VerticalAlignment = 'Top'
         $sp = New-Object Windows.Controls.StackPanel
         $hd = New-Object Windows.Controls.DockPanel
-        $hd.Margin = '6,0,4,8'
+        $hd.Margin = '6,0,4,0'
         $cnt = New-Text '' -Size 11 -Color $script:Colors.muted -Mono
         $cnt.VerticalAlignment = 'Center'
         [Windows.Controls.DockPanel]::SetDock($cnt, 'Right')
         [void]$hd.Children.Add($cnt)
-        [void]$hd.Children.Add((New-Text $name -Size 15 -Weight SemiBold))
-        [void]$sp.Children.Add($hd)
+        # Section header in the accent color, underlined, so it stands apart from the tweaks
+        [void]$hd.Children.Add((New-Text $name -Size 15 -Weight SemiBold -Color $script:Colors.accent))
+        $hdLine = New-Object Windows.Controls.Border
+        $hdLine.BorderBrush = $script:Colors.line; $hdLine.BorderThickness = '0,0,0,1'
+        $hdLine.Padding = '0,0,0,8'; $hdLine.Margin = '0,0,0,6'; $hdLine.Child = $hd
+        [void]$sp.Children.Add($hdLine)
         $script:SectionCounts += @{ Text = $cnt; Tools = @($groups[$name]) }
 
         foreach ($t in $groups[$name]) {
