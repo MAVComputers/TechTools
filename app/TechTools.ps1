@@ -32,7 +32,7 @@ $script:State = @{
     Page = 'home'; Tab = @{}; Sel = @{}; Choice = @{}; Query = ''
     NetStatus = $null; NetChecked = 'Not checked yet'; Diag = $null
     RestartNeeded = $false; RestartWhy = (New-Object System.Collections.ArrayList); RestartScheduled = $false
-    Health = $null; HealthError = ''; Pdf = $null
+    Health = $null; HealthError = ''; Pdf = $null; Server = $null; ServerError = ''
 }
 $script:SeenVersion = -1
 
@@ -201,6 +201,7 @@ function Render-Page {
     $script:StatusHost = $null
     $script:SectionsHost = $null
     $script:HealthHost = $null
+    $script:ServerHost = $null
     if ($script:State.Page -eq 'home') { Render-Home } else { Render-Category (Get-Cat $script:State.Page) }
 }
 
@@ -362,10 +363,17 @@ function Render-Category {
             if ($q.Cmd) { [void]$tx.Children.Add((New-Text $q.Cmd -Size 11 -Color $script:Colors.muted -Mono)) }
             [void]$sp.Children.Add($tx)
             $b.Content = $sp
-            $b.Add_Click({ Invoke-Tool $script:State.Page $this.Uid; if ($script:HealthHost) { Render-Health } })
+            $b.Add_Click({ Invoke-QuickTool $this.Uid })
             [void]$qw.Children.Add($b)
         }
         [void]$p.Children.Add($qw)
+    }
+
+    # Office server card (Windows > Diagnostics)
+    if (@($Cat.Tools | Where-Object { $_.Effect -eq 'serverstatus' -and -not $_.Hidden -and $_.Tab -eq $current }).Count -gt 0) {
+        $script:ServerHost = New-Object Windows.Controls.StackPanel
+        [void]$p.Children.Add($script:ServerHost)
+        Render-Server
     }
 
     # PC health report (Windows > Diagnostics)
@@ -696,6 +704,254 @@ function Render-Status {
         }
         $dc.Child = $ds
         [void]$sp.Children.Add($dc)
+    }
+    $card.Child = $sp
+    [void]$h.Children.Add($card)
+}
+
+# ------------------------------------------------------- Office server ---
+$script:ServerConfigPath = Join-Path $env:ProgramData 'MAVTechTools\server.json'
+
+function Invoke-QuickTool {
+    param([string]$Id)
+    if ($Id -eq 'servercheck' -and -not (Get-ServerConfig)) {
+        if (-not (Show-ServerSetup)) { return }
+    }
+    Invoke-Tool $script:State.Page $Id
+    if ($script:HealthHost) { Render-Health }
+    if ($script:ServerHost) { Render-Server }
+}
+
+function Get-ServerConfig {
+    if (-not (Test-Path -LiteralPath $script:ServerConfigPath)) { return $null }
+    try { $c = [System.IO.File]::ReadAllText($script:ServerConfigPath) | ConvertFrom-Json } catch { return $null }
+    if (-not $c.Unc) { return $null }
+    return $c
+}
+
+function New-Dialog {
+    # A small dark dialog. Returns @{ Window; Panel } ; add fields to Panel.
+    param([string]$Title, [string]$Message, [string]$OkText = 'OK')
+    $w = New-Object Windows.Window
+    $w.Title = 'MAV TechTools - ' + $Title
+    $w.Width = 480
+    $w.SizeToContent = 'Height'
+    $w.ResizeMode = 'NoResize'
+    $w.WindowStartupLocation = 'CenterOwner'
+    $w.Background = Get-Brush '#0A1019'
+    $w.FontFamily = 'Segoe UI'
+    $w.Resources = $script:Window.Resources
+    try { $w.Owner = $script:Window } catch { $w.WindowStartupLocation = 'CenterScreen' }
+    $outer = New-Object Windows.Controls.StackPanel
+    $outer.Margin = '24,20,24,20'
+    [void]$outer.Children.Add((New-Text $Title -Size 18 -Weight SemiBold))
+    if ($Message) { [void]$outer.Children.Add((New-Text $Message -Color $script:Colors.muted -Wrap -Margin '0,6,0,14')) }
+    $panel = New-Object Windows.Controls.StackPanel
+    [void]$outer.Children.Add($panel)
+    $row = New-Object Windows.Controls.StackPanel
+    $row.Orientation = 'Horizontal'
+    $row.HorizontalAlignment = 'Right'
+    $row.Margin = '0,18,0,0'
+    $cancel = New-Button 'Cancel'
+    $cancel.IsCancel = $true
+    $cancel.Margin = '0,0,8,0'
+    [void]$row.Children.Add($cancel)
+    $ok = New-Button $OkText -Style 'PrimaryBtn'
+    $ok.IsDefault = $true
+    $ok.Padding = '16,0'
+    $ok.Tag = $w
+    $ok.Add_Click({ $this.Tag.DialogResult = $true })
+    [void]$row.Children.Add($ok)
+    [void]$outer.Children.Add($row)
+    $w.Content = $outer
+    return @{ Window = $w; Panel = $panel }
+}
+
+function Add-DialogField {
+    param($Dialog, [string]$Label, [string]$Value = '', [switch]$Password, [string]$Hint = '')
+    [void]$Dialog.Panel.Children.Add((New-Text $Label -Weight SemiBold -Margin '0,8,0,4'))
+    if ($Password) { $box = New-Object Windows.Controls.PasswordBox } else { $box = New-Object Windows.Controls.TextBox; $box.Text = $Value }
+    $box.Background = Get-Brush '#0E1520'
+    $box.Foreground = Get-Brush $script:Colors.text
+    $box.BorderBrush = Get-Brush '#263449'
+    $box.CaretBrush = Get-Brush $script:Colors.text
+    $box.Padding = '8,7'
+    $box.FontSize = 14
+    [void]$Dialog.Panel.Children.Add($box)
+    if ($Hint) { [void]$Dialog.Panel.Children.Add((New-Text $Hint -Size 11 -Color $script:Colors.muted -Wrap -Margin '0,4,0,0')) }
+    return $box
+}
+
+function Show-ServerSetup {
+    # Asks for the office server share; saves it on this PC only.
+    $cfg = Get-ServerConfig
+    $unc = ''; $drive = ''
+    if ($cfg) { $unc = [string]$cfg.Unc; $drive = [string]$cfg.Drive }
+    while ($true) {
+        $d = New-Dialog 'Office server' 'Saved on this PC only (C:\ProgramData\MAVTechTools). No passwords are stored here.' 'Save and check'
+        $box = Add-DialogField $d 'Server share' $unc -Hint 'For example \\OFFICE-SRV\Data or \\192.168.1.10\Shared'
+        [void]$d.Panel.Children.Add((New-Text 'Drive letter (optional)' -Weight SemiBold -Margin '0,12,0,4'))
+        $cb = New-Object Windows.Controls.ComboBox
+        $none = New-Object Windows.Controls.ComboBoxItem; $none.Content = 'Keep the drives the user already has'; $none.Tag = ''
+        [void]$cb.Items.Add($none)
+        $cb.SelectedIndex = 0
+        foreach ($c in [char[]]'DEFGHIJKLMNOPQRSTUVWXYZ') {
+            $it = New-Object Windows.Controls.ComboBoxItem; $it.Content = "${c}:"; $it.Tag = "${c}:"
+            [void]$cb.Items.Add($it)
+            if ($drive -eq "${c}:") { $cb.SelectedItem = $it }
+        }
+        [void]$d.Panel.Children.Add($cb)
+        [void]$d.Panel.Children.Add((New-Text 'Used when the user has no drive mapped to this server yet.' -Size 11 -Color $script:Colors.muted -Wrap -Margin '0,4,0,0'))
+        $box.Focus() | Out-Null
+        if (-not $d.Window.ShowDialog()) { return $false }
+        $unc = $box.Text.Trim().TrimEnd('\')
+        $drive = [string]$cb.SelectedItem.Tag
+        if ($unc -match '^\\\\[^\\/:*?"<>|]+\\[^\\/:*?"<>|]+') { break }
+        [void][Windows.MessageBox]::Show('Enter the share as \\SERVER\Share (two backslashes, the server, then the share name).', 'MAV TechTools', 'OK', 'Warning')
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $script:ServerConfigPath) -Force | Out-Null
+    $json = [ordered]@{ Unc = $unc; Drive = $drive; Saved = (Get-Date).ToString('s') } | ConvertTo-Json
+    [System.IO.File]::WriteAllText($script:ServerConfigPath, $json)
+    $script:State.Server = $null
+    $script:State.ServerError = ''
+    Add-ConsoleLine ('Office server set to ' + $unc) 'info'
+    return $true
+}
+
+function Show-LoginDialog {
+    param([string]$Title, [string]$Message, [string]$User)
+    $d = New-Dialog $Title $Message 'Test and save'
+    $ub = Add-DialogField $d 'Username' $User -Hint 'For example OFFICE-SRV\frontdesk, DOMAIN\user or user@domain.com'
+    $pb = Add-DialogField $d 'Password' -Password
+    if ($User) { $pb.Focus() | Out-Null } else { $ub.Focus() | Out-Null }
+    if (-not $d.Window.ShowDialog()) { return $null }
+    if (-not $ub.Text.Trim() -or $pb.SecurePassword.Length -eq 0) { Add-ConsoleLine 'Username and password are both needed.' 'warn'; return $null }
+    return (New-Object System.Management.Automation.PSCredential($ub.Text.Trim(), $pb.SecurePassword))
+}
+
+function Start-ServerReauth {
+    param([string]$Mode)
+    $st = $script:State.Server
+    $cfg = Get-ServerConfig
+    if (-not $cfg) { return }
+    if ($Mode -eq 'trust') {
+        $cred = Show-LoginDialog 'Repair domain trust' 'Enter a domain admin account (DOMAIN\admin). It is used once to reset this PC''s domain account and is not saved.' ''
+    } else {
+        $for = 'the signed-in user'
+        if ($st -and $st.ConsoleUser) { $for = $st.ConsoleUser }
+        $u = ''
+        if ($st) { $u = [string]$st.SavedUser }
+        $cred = Show-LoginDialog 'Re-authenticate' ('Login for ' + $cfg.Unc + '. It is tested first, then saved in Credential Manager for ' + $for + ' and the mapped drives are reconnected.') $u
+    }
+    if (-not $cred) { return }
+    $cat = Get-Cat 'windows'
+    $tool = $cat.Tools | Where-Object { $_.Id -eq 'serverreauth' } | Select-Object -First 1
+    $job = New-TTJob -Category $cat -Tool $tool
+    if ($Mode -eq 'trust') { $job.Name = 'Repair domain trust' }
+    $job.Input = @{ Mode = $Mode; Credential = $cred }
+    Add-Jobs @($job)
+    Render-Server
+}
+
+function Render-Server {
+    $h = $script:ServerHost
+    if ($null -eq $h) { return }
+    $h.Children.Clear()
+    $cfg = Get-ServerConfig
+    $st = $script:State.Server
+    $busy = (Test-ToolBusy 'servercheck') -or (Test-ToolBusy 'serverreauth')
+
+    $level = 'idle'
+    if ($st -and $st.Configured) { $level = $st.Level }
+    $card = New-Card -Padding '18'
+    $card.Margin = '0,0,0,14'
+    if ($level -eq 'fail') { $card.BorderBrush = Get-Brush '#5A2626' } elseif ($level -eq 'warn') { $card.BorderBrush = Get-Brush '#5A4A1F' }
+    $sp = New-Object Windows.Controls.StackPanel
+
+    $dock = New-Object Windows.Controls.DockPanel
+    $btns = New-Object Windows.Controls.WrapPanel
+    $btns.VerticalAlignment = 'Top'
+    [Windows.Controls.DockPanel]::SetDock($btns, 'Right')
+    $addBtn = {
+        param($text, $style, $icon, $action)
+        $ic = '#E6EDF5'
+        if ($style -eq 'PrimaryBtn') { $ic = '#04121A' }
+        $b = New-Button $text -Style $style -Icon $icon -IconColor $ic
+        $b.Margin = '8,0,0,8'
+        $b.Tag = $action
+        $b.IsEnabled = -not $busy
+        $b.Add_Click({ & ([scriptblock]::Create([string]$this.Tag)) })
+        [void]$btns.Children.Add($b)
+    }
+    if (-not $cfg) {
+        & $addBtn 'Set up server' 'PrimaryBtn' 'folder' 'if (Show-ServerSetup) { Invoke-QuickTool servercheck }'
+    } else {
+        if ($st -and $st.Configured) {
+            & $addBtn 'Check again' 'Btn' 'refresh' 'Invoke-QuickTool servercheck'
+            $style = 'Btn'
+            if ($st.NeedsAuth) { $style = 'PrimaryBtn' }
+            & $addBtn 'Re-authenticate' $style 'bolt' 'Start-ServerReauth login'
+            if ($st.NeedsTrust) { & $addBtn 'Repair domain trust' 'PrimaryBtn' 'bolt' 'Start-ServerReauth trust' }
+        } else {
+            & $addBtn 'Check now' 'PrimaryBtn' 'play' 'Invoke-QuickTool servercheck'
+        }
+        & $addBtn 'Change server' 'Btn' 'folder' 'if (Show-ServerSetup) { Invoke-QuickTool servercheck }'
+    }
+    [void]$dock.Children.Add($btns)
+
+    $head = New-Object Windows.Controls.StackPanel
+    [void]$head.Children.Add((New-Text 'OFFICE SERVER' -Size 11 -Color $script:Colors.accent -Mono))
+    $title = 'Not set up on this PC'
+    if ($cfg) { $title = [string]$cfg.Unc }
+    [void]$head.Children.Add((New-Text $title -Size 20 -Weight SemiBold -Margin '0,2,0,4'))
+    $line = New-Object Windows.Controls.StackPanel
+    $line.Orientation = 'Horizontal'
+    $headline = ''
+    if (-not $cfg) { $headline = 'Enter the server share once; it is remembered on this PC.' }
+    elseif ($busy) { $headline = 'Checking...' }
+    elseif ($st -and $st.Configured) { $headline = $st.Headline }
+    elseif ($script:State.ServerError) { $headline = 'Last check failed: ' + $script:State.ServerError; $level = 'fail' }
+    else { $headline = 'Not checked yet' }
+    $hc = $script:Colors.muted
+    if ($level -eq 'ok' -or $level -eq 'warn' -or $level -eq 'fail') { $hc = $script:Colors[$level] }
+    if ($busy) { $hc = $script:Colors.step }
+    if ($st -and $st.Configured -and -not $busy) {
+        $dot = New-Dot $level 11
+        $dot.Margin = '0,0,8,0'
+        [void]$line.Children.Add($dot)
+    }
+    $ht = New-Text $headline -Size 14 -Weight SemiBold -Color $hc -Wrap
+    $ht.MaxWidth = 560
+    [void]$line.Children.Add($ht)
+    if ($st -and $st.At -and -not $busy) { [void]$line.Children.Add((New-Text ('Checked ' + ([datetime]$st.At).ToString('HH:mm')) -Size 11 -Color $script:Colors.muted -Mono -Margin '12,3,0,0')) }
+    [void]$head.Children.Add($line)
+    [void]$dock.Children.Add($head)
+    [void]$sp.Children.Add($dock)
+
+    if ($st -and $st.Configured) {
+        $g = New-Object Windows.Controls.Grid
+        $g.Margin = '0,12,0,0'
+        foreach ($w in @('22', 'Auto', '*')) { $cd = New-Object Windows.Controls.ColumnDefinition; $cd.Width = $w; [void]$g.ColumnDefinitions.Add($cd) }
+        $i = 0
+        foreach ($c in @($st.Checks)) {
+            $rd = New-Object Windows.Controls.RowDefinition; $rd.Height = 'Auto'; [void]$g.RowDefinitions.Add($rd)
+            $mark = [string][char]0x2713
+            if ($c.Level -eq 'warn') { $mark = '!' }
+            if ($c.Level -eq 'fail') { $mark = [string][char]0x2715 }
+            $m = New-Text $mark -Weight Bold -Color $script:Colors[$c.Level] -Mono -Margin '0,3,0,3'
+            [Windows.Controls.Grid]::SetRow($m, $i)
+            [void]$g.Children.Add($m)
+            $n = New-Text $c.Name -Weight SemiBold -Margin '0,3,18,3'
+            [Windows.Controls.Grid]::SetRow($n, $i); [Windows.Controls.Grid]::SetColumn($n, 1)
+            [void]$g.Children.Add($n)
+            $dc = $script:Colors.plain
+            if ($c.Level -eq 'fail') { $dc = $script:Colors.fail }
+            $t = New-Text $c.Detail -Color $dc -Wrap -Margin '0,3,0,3'
+            [Windows.Controls.Grid]::SetRow($t, $i); [Windows.Controls.Grid]::SetColumn($t, 2)
+            [void]$g.Children.Add($t)
+            $i++
+        }
+        [void]$sp.Children.Add($g)
     }
     $card.Child = $sp
     [void]$h.Children.Add($card)
@@ -1074,6 +1330,7 @@ function Update-ActionCenter {
 function Complete-FinishedJobs {
     $statusChanged = $false
     $healthChanged = $false
+    $serverChanged = $false
     foreach ($j in $script:Sync.Jobs.ToArray()) {
         if ($j.Handled -or ($j.Status -ne 'done' -and $j.Status -ne 'failed')) { continue }
         $j.Handled = $true
@@ -1081,6 +1338,13 @@ function Complete-FinishedJobs {
             $script:State.RestartNeeded = $true
             if ($script:State.RestartWhy -notcontains $j.Name) { [void]$script:State.RestartWhy.Add($j.Name) }
             Add-ConsoleLine ('Restart needed to finish: ' + $j.Name) 'warn'
+        }
+        if ($j.Effect -eq 'serverstatus') {
+            $serverChanged = $true
+            if ($j.Status -eq 'done' -and $j.Result) {
+                if ($j.Result.Configured) { $script:State.Server = $j.Result } else { $script:State.Server = $null }
+                $script:State.ServerError = ''
+            } else { $script:State.ServerError = [string]$j.Error }
         }
         if ($j.Effect -eq 'healthreport') {
             $healthChanged = $true
@@ -1103,6 +1367,7 @@ function Complete-FinishedJobs {
     }
     if ($statusChanged) { Render-Status }
     if ($healthChanged -and $script:HealthHost) { Render-Health }
+    if ($serverChanged -and $script:ServerHost) { Render-Server }
     Update-RestartBanner
 }
 
@@ -1213,6 +1478,12 @@ if ($SmokeTest) {
     $script:State.Health = [pscustomobject]@{ Sections = @($okSec, $fakeSec); Html = (Join-Path $env:TEMP 'none.html'); At = (Get-Date); Pc = 'TEST-PC' }
     Render-Page
     if ($null -eq $script:HealthHost -or $script:HealthHost.Children.Count -lt 4) { Write-Host 'FAIL health report did not render'; $errors++ }
+    $script:State.Server = [pscustomobject]@{ Configured = $true; Unc = '\\OFFICE-SRV\Data'; Server = 'OFFICE-SRV'; Share = 'Data'; Drive = 'S:'
+        Level = 'fail'; Headline = 'Login problem: the server rejected the saved login'; NeedsAuth = $true; NeedsTrust = $true
+        SavedUser = 'OFFICE-SRV\frontdesk'; ConsoleUser = 'PC\frontdesk'; SameUser = $true; Drives = @(); At = (Get-Date)
+        Checks = @([pscustomobject]@{ Name = 'File sharing'; Level = 'ok'; Detail = 'Server answers' }, [pscustomobject]@{ Name = 'Share access'; Level = 'fail'; Detail = 'Rejected' }) }
+    Render-Server
+    if ($null -eq $script:ServerHost -or $script:ServerHost.Children.Count -ne 1) { Write-Host 'FAIL server card did not render'; $errors++ }
     $script:State.Page = 'internet'
     Render-Page
     $net = Get-Cat 'internet'

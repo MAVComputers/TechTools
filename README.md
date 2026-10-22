@@ -36,7 +36,7 @@ How it works on screen:
 | Category | Status |
 | --- | --- |
 | Internet Issues | Live: connection status, full diagnosis with recommended fixes, 31 tools across Diagnose & Repair, Wi-Fi and Tools |
-| Windows | Live: Diagnostics tab with **PC health check** (system, RAM, drives and drive health, free space, network, pings, speed test, event log errors, top processes, shares, printers and driver dates, pending updates, Webroot / SentinelOne / Bitdefender / CrowdStrike). Results show in the app and save as HTML or PDF. Tweaks, Updates, Configurations, Installs and Repair come next. |
+| Windows | Live: Diagnostics tab with **PC health check** (system, RAM, drives and drive health, free space, network, pings, speed test, event log errors, top processes, shares, printers and driver dates, pending updates, Webroot / SentinelOne / Bitdefender / CrowdStrike). Results show in the app and save as HTML or PDF. Also **Check server connection**: tests reachability, saved login, share access, mapped drives and domain trust for the office server, with **Re-authenticate** to save a new login in Credential Manager for the signed-in user and reconnect their drives (server path saved per PC in `C:\ProgramData\MAVTechTools\server.json`, never in this repo). Tweaks, Updates, Configurations, Installs and Repair come next. |
 | Dental | Planned: needs install paths, service names and ports per program |
 | Ophthalmic | Planned |
 

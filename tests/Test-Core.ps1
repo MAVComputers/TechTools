@@ -126,6 +126,20 @@ Check 'report escapes HTML' ($html -match '&lt;b&gt;bad&lt;/b&gt; &amp; worse' -
 Check 'report shows problem count' ($html -match '2 problem\(s\)')
 Remove-Item $report -Force
 
+Write-Host 'Office server'
+$x = Split-TTUnc '\\OFFICE-SRV\Data\Sub\'
+Check 'UNC path split' ($x.Server -eq 'OFFICE-SRV' -and $x.Share -eq 'Data' -and $x.Root -eq '\\OFFICE-SRV\Data')
+Check 'bad UNC rejected' ($null -eq (Split-TTUnc 'OFFICE-SRV\Data'))
+Check 'wrong password is a login problem' ((Get-TTShareProblem 'The user name or password is incorrect.') -eq 'auth')
+Check 'access denied is a login problem' ((Get-TTShareProblem 'Access is denied.') -eq 'auth')
+Check 'missing share detected' ((Get-TTShareProblem 'The network name cannot be found.') -eq 'share')
+Check 'unreachable detected' ((Get-TTShareProblem 'The network path was not found.') -eq 'reach')
+$tricky = 'p@ss "word" $x `y %z'
+Check 'secrets embed safely in helper scripts' ((Invoke-Expression (ConvertTo-TTPsString $tricky)) -eq $tricky)
+$remap = Get-TTRemapScript @([pscustomobject]@{ Letter = 'S:'; Path = '\\OFFICE-SRV\Data' }, [pscustomobject]@{ Letter = 'bad'; Path = 'x' })
+Check 'drive remap script parses' ((Test-TTScriptSyntax ('$log = @()' + "`n" + $remap)).Count -eq 0)
+Check 'drive remap skips bad letters' ($remap -notmatch 'net use bad')
+
 # On Windows, run the read-only checks for real (skips speed test and Windows Update, which are slow).
 if ($env:OS -eq 'Windows_NT') {
     $PSDefaultParameterValues['*:ErrorAction'] = 'Stop'
@@ -136,6 +150,20 @@ if ($env:OS -eq 'Windows_NT') {
         $r = Invoke-TTHealthPart $k $parts[$k]
         Check "live check runs: $k" ($r.Summary -notmatch '^Could not check') ("($($r.Summary))")
         Write-Host ('       {0}: {1}' -f $r.Level, $r.Summary)
+    }
+
+    if (-not ('TTCred' -as [type])) { Add-Type -TypeDefinition $script:TTCredSource -Language CSharp }
+    Check 'Credential Manager helper compiles' ([bool]('TTCred' -as [type]))
+    # Point the server check at this PC's own admin share and run it.
+    $cfgPath = Get-TTServerConfigPath
+    $hadCfg = Test-Path $cfgPath
+    if (-not $hadCfg) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $cfgPath) -Force | Out-Null
+        [System.IO.File]::WriteAllText($cfgPath, '{"Unc":"\\\\localhost\\C$","Drive":""}')
+        $st = Invoke-TTHealthPart 'Server' { Get-TTServerStatus }
+        Check 'live server check runs' ($st.Configured -and @($st.Checks).Count -ge 2) ("($($st.Summary))")
+        foreach ($c in @($st.Checks)) { Write-Host ('       {0}: {1} - {2}' -f $c.Level, $c.Name, $c.Detail) }
+        Remove-Item $cfgPath -Force
     }
     $PSDefaultParameterValues.Remove('*:ErrorAction')
 }

@@ -103,9 +103,11 @@ function Import-TTCatalog {
             $cat.ComingSoon = $false
             $cat.StatusPanel = [bool](Get-TTProp $doc 'statusPanel' $false)
             $shared = Join-TTLines (Get-TTProp $doc 'shared')
-            $sharedFile = Get-TTProp $doc 'sharedFile'
-            if ($sharedFile) {
-                $shared = [System.IO.File]::ReadAllText((Join-Path $configDir $sharedFile), [System.Text.Encoding]::UTF8) + "`n" + $shared
+            # sharedFile: one path or a list of paths, loaded in order before 'shared'.
+            $files = @(Get-TTProp $doc 'sharedFile' @())
+            [array]::Reverse($files)
+            foreach ($sf in $files) {
+                if ($sf) { $shared = [System.IO.File]::ReadAllText((Join-Path $configDir $sf), [System.Text.Encoding]::UTF8) + "`n" + $shared }
             }
             $cat.Shared = $shared
             $cat.Tabs = @(@(Get-TTProp $doc 'tabs' @()) | ForEach-Object { [pscustomobject]@{ Id = [string]$_.id; Title = [string]$_.title } })
@@ -219,6 +221,7 @@ function New-TTJob {
         Status        = 'queued'
         Restart       = $restart
         Effect        = $Tool.Effect
+        Input         = $null
         Result        = $null
         Error         = $null
         Handled       = $false
@@ -304,6 +307,8 @@ function Write-Step {
 function Write-Info { param([string]$Text) Send-TTLog $Text 'plain' }
 function Write-Warn { param([string]$Text) $script:TTJob.Warnings = [int]$script:TTJob.Warnings + 1; Send-TTLog $Text 'warn' }
 function Set-Result { param($Value) $script:TTJob.Result = $Value }
+# Values the window hands to a job (for example a login typed by the tech). Never logged.
+function Get-TTInput { return $script:TTJob.Input }
 function Assert-TTExit {
     param([string]$What, [int[]]$Ok = @(0))
     $code = $global:LASTEXITCODE
@@ -346,6 +351,7 @@ function Invoke-TTJob {
         $Job.StepText = 'failed'
         Send-TTLog ('FAILED  ' + $Job.Name + ': ' + $Job.Error) 'fail'
     }
+    $Job.Input = $null
     $Job.Finished = Get-Date
     $Sync.Version++
 }
