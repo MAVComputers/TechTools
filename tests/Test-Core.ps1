@@ -171,7 +171,7 @@ Check 'dental category is live' ($den -and -not $den.ComingSoon)
 $mw = @($den.Tools | Where-Object { $_.Id -eq 'mouthwatch' })[0]
 Check 'MouthWatch IOC is a quick button on 3rd Party Apps' ($mw -and $mw.Type -eq 'quick' -and $mw.Tab -eq '3p' -and $mw.Label -eq 'MouthWatch IOC')
 Check 'MouthWatch downloads over https from mouthwatch.com' ($mw.Script -match "https://mouthwatch\.com/wp-content/uploads/downloads/setupmouthwatch\.exe")
-Check 'MouthWatch shows a notice card' ($mw.Notice -and $mw.Notice.Title)
+Check 'MouthWatch shows the installer password to copy' ($mw.Notice -and $mw.Notice.Copy -eq 'YP9RQH')
 # Worker-only helpers the install scripts call
 if (-not (Get-Command Write-Info -ErrorAction SilentlyContinue)) { function Write-Info { param([string]$Text) } }
 if (-not (Get-Command Write-Warn -ErrorAction SilentlyContinue)) { function Write-Warn { param([string]$Text) } }
