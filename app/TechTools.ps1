@@ -105,6 +105,14 @@ $script:Icons = @{
     file    = 'M6,2 H14 L20,8 V22 H6 Z M14,2 V8 H20'
     folder  = 'M3,6 H10 L12,8 H21 V19 H3 Z'
     trash   = 'M4,7 H20 M10,11 V17 M14,11 V17 M6,7 L7,20 H17 L18,7 M9,7 V4 H15 V7'
+    gauge   = 'M12,13 L16,9 M4,17 A8,8 0 1 1 20,17'
+    printer = 'M7,8 V3 H17 V8 M5,16 H3 V8 H21 V16 H19 M7,13 H17 V21 H7 Z'
+    printerx = 'M7,8 V3 H17 V8 M5,16 H3 V8 H21 V12 M7,13 H13 V21 H7 Z M16,15 L21,20 M21,15 L16,20'
+    alert   = 'M12,3 L22,21 L2,21 Z M12,10 V15 M12,18 V18.5'
+    wrench  = 'M14,6 A4,4 0 0 0 19,11 L10,20 A2.1,2.1 0 0 1 7,17 L16,8 M14,6 L17,3'
+    battery = 'M3,8 H18 V16 H3 Z M21,11 V13 M6,11 V13 M9,11 V13'
+    clock   = 'M12,7 V12 L15,14 M3,12 A9,9 0 1 1 21,12 A9,9 0 1 1 3,12'
+    server  = 'M4,4 H20 V10 H4 Z M4,14 H20 V20 H4 Z M8,7 H8.5 M8,17 H8.5'
 }
 function New-Icon {
     param([string]$Name, [double]$Size = 16, [string]$Color = '#E6EDF5', [switch]$Fill)
@@ -374,7 +382,27 @@ function Render-Category {
 
     # Quick actions for this tab
     $quick = @($Cat.Tools | Where-Object { $_.Type -eq 'quick' -and -not $_.Hidden -and $_.Tab -eq $current })
-    if ($quick.Count -gt 0) {
+    if ($quick.Count -gt 0 -and @($quick | Where-Object { $_.Group }).Count -gt 0) {
+        # Equal-size tiles grouped under headings (Windows > Diagnostics)
+        [void]$p.Children.Add((New-Text 'QUICK ACTIONS - RUN IMMEDIATELY' -Size 11 -Color $script:Colors.muted -Mono -Margin '0,0,0,8'))
+        $groups = @()
+        foreach ($q in $quick) { $g = $q.Group; if (-not $g) { $g = 'More' }; if ($groups -notcontains $g) { $groups += $g } }
+        foreach ($g in $groups) {
+            $head = New-Object Windows.Controls.Border
+            $head.BorderBrush = Get-Brush $script:Colors.line
+            $head.BorderThickness = '0,0,0,1'
+            $head.Padding = '0,0,0,4'
+            $head.Margin = '0,4,0,8'
+            $head.Child = (New-Text $g -Size 14 -Weight SemiBold -Color $script:Colors.accent)
+            [void]$p.Children.Add($head)
+            $qw = New-Object Windows.Controls.WrapPanel
+            $qw.Margin = '0,0,0,8'
+            foreach ($q in @($quick | Where-Object { $(if ($_.Group) { $_.Group } else { 'More' }) -eq $g })) {
+                [void]$qw.Children.Add((New-QuickTile $q))
+            }
+            [void]$p.Children.Add($qw)
+        }
+    } elseif ($quick.Count -gt 0) {
         [void]$p.Children.Add((New-Text 'QUICK ACTIONS - RUN IMMEDIATELY' -Size 11 -Color $script:Colors.muted -Mono -Margin '0,0,0,8'))
         $qw = New-Object Windows.Controls.WrapPanel
         $qw.Margin = '0,0,0,18'
@@ -747,6 +775,52 @@ function Render-Status {
 
 # ------------------------------------------------------- Office server ---
 $script:ServerConfigPath = Join-Path $env:ProgramData 'MAVTechTools\server.json'
+
+function New-QuickTile {
+    # One equal-size tile: icon box, label, short description.
+    param($Tool)
+    $b = New-Object Windows.Controls.Button
+    $b.Style = $script:Window.FindResource('Btn')
+    $b.Width = 300
+    $b.Height = 76
+    $b.Margin = '0,0,10,10'
+    $b.Padding = '14,0'
+    $b.HorizontalContentAlignment = 'Stretch'
+    $b.Uid = $Tool.Id
+    if ($Tool.Info) { $b.ToolTip = $Tool.Info }
+    $grid = New-Object Windows.Controls.DockPanel
+    $box = New-Object Windows.Controls.Border
+    $box.Width = 40; $box.Height = 40
+    $box.CornerRadius = 10
+    $box.BorderThickness = 1
+    $box.BorderBrush = Get-Brush '#1D5A78'
+    $box.Background = Get-Brush '#0A1622'
+    $box.Margin = '0,0,12,0'
+    $icon = 'bolt'
+    if ($Tool.Icon -and $script:Icons.ContainsKey($Tool.Icon)) { $icon = $Tool.Icon }
+    $ic = New-Icon -Name $icon -Size 20 -Color $script:Colors.accent
+    $ic.HorizontalAlignment = 'Center'; $ic.VerticalAlignment = 'Center'
+    $box.Child = $ic
+    [Windows.Controls.DockPanel]::SetDock($box, 'Left')
+    [void]$grid.Children.Add($box)
+    $tx = New-Object Windows.Controls.StackPanel
+    $tx.VerticalAlignment = 'Center'
+    $label = $Tool.Label
+    if ($Tool.Restart) { $label += '  (restart)' }
+    $lt = New-Text $label -Weight SemiBold
+    $lt.TextTrimming = 'CharacterEllipsis'
+    [void]$tx.Children.Add($lt)
+    if ($Tool.Cmd) {
+        $ct = New-Text $Tool.Cmd -Size 12 -Color $script:Colors.muted -Wrap -Margin '0,3,0,0'
+        $ct.MaxHeight = 32
+        $ct.TextTrimming = 'CharacterEllipsis'
+        [void]$tx.Children.Add($ct)
+    }
+    [void]$grid.Children.Add($tx)
+    $b.Content = $grid
+    $b.Add_Click({ Invoke-QuickTool $this.Uid })
+    return $b
+}
 
 function New-NoticeCard {
     # Card with a title, a line of text and an optional value with a Copy button.
@@ -1579,6 +1653,11 @@ if (-not $script:IsAdmin) { Add-ConsoleLine 'Not running as administrator. Most 
 # ------------------------------------------------------------ smoke test ---
 if ($SmokeTest) {
     $errors = 0
+    foreach ($k in @($script:Icons.Keys)) {
+        try { [void][Windows.Media.Geometry]::Parse($script:Icons[$k]) } catch { Write-Host ('FAIL icon does not parse: ' + $k); $errors++ }
+    }
+    foreach ($c in $script:Catalog) { foreach ($t in @($c.Tools | Where-Object { $_.Icon })) {
+        if (-not $script:Icons.ContainsKey($t.Icon)) { Write-Host ('FAIL unknown icon ' + $t.Icon + ' on ' + $t.Id); $errors++ } } }
     foreach ($cat in $script:Catalog) {
         Show-Page $cat.Id
         foreach ($tab in $cat.Tabs) { $script:State.Tab[$cat.Id] = $tab.Id; Render-Page }

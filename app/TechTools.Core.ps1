@@ -79,6 +79,8 @@ function ConvertTo-TTTool {
         Script   = $script
         Options  = $options
         Notice   = $notice
+        Group    = [string](Get-TTProp $Raw 'group' '')
+        Icon     = [string](Get-TTProp $Raw 'icon' '')
     }
 }
 
