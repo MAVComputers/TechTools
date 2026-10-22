@@ -1,5 +1,5 @@
 {
-  "version": "0.1.1",
+  "version": "0.1.4",
   "files": [
     "app/logo.path.txt",
     "app/MainWindow.xaml",
@@ -7,6 +7,8 @@
     "app/TechTools.ps1",
     "config/auth.json",
     "config/categories.json",
+    "config/halo.json",
+    "config/scripts/common/halo.ps1",
     "config/scripts/common/installer.ps1",
     "config/scripts/dental/mouthwatch.ps1",
     "config/scripts/internet/_shared.ps1",

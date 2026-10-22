@@ -270,6 +270,73 @@ Check 'weak hash settings are refused' (-not (Test-TTPassword -Password 'x' -Aut
 $sec = New-Object Security.SecureString; foreach ($ch in 'abc'.ToCharArray()) { $sec.AppendChar($ch) }
 Check 'secure text converts for hashing' ((ConvertFrom-TTSecure $sec) -eq 'abc')
 
+# HaloPSA: key locked with the team password, note text, and the send script (Halo API mocked)
+$box = Protect-TTSecret -Secret 'halo-client-secret' -Password 'team pass 123' -Iterations 100000
+Check 'locked key opens with the team password' ((Unprotect-TTSecret -Box $box -Password 'team pass 123') -eq 'halo-client-secret')
+Check 'locked key stays shut with a wrong password' ($null -eq (Unprotect-TTSecret -Box $box -Password 'team pass 124'))
+$tampered = [pscustomobject]$box; $tampered.data = [Convert]::ToBase64String((New-Object byte[] 32))
+Check 'changed key data is refused' ($null -eq (Unprotect-TTSecret -Box $tampered -Password 'team pass 123'))
+Check 'locked key file holds no plain secret' (-not (($box | ConvertTo-Json) -match 'halo-client-secret'))
+$rep = [pscustomobject]@{ Title = 'Slow PC Check'; Lead = 'Likely cause: <disk> full'; Sections = @(
+    [pscustomobject]@{ Title = 'Drives'; Level = 'fail'; Summary = 'C: 2 GB free' },
+    [pscustomobject]@{ Title = 'RAM'; Level = 'warn'; Summary = '91% used' },
+    [pscustomobject]@{ Title = 'System'; Level = 'ok'; Summary = 'fine' }) }
+$noteHtml = ConvertTo-TTHaloNote -Report $rep -Headline '1 problem(s) and 1 warning(s) found' -Pc 'PC-1' -RunBy 'DOM\tech'
+Check 'Halo note lists problems and warnings only' ($noteHtml -match 'PROBLEM</b> Drives' -and $noteHtml -match 'WARNING</b> RAM' -and $noteHtml -notmatch 'System')
+Check 'Halo note escapes HTML' ($noteHtml -match '&lt;disk&gt;' -and $noteHtml -notmatch '<disk>')
+Check 'ticket numbers are checked' ((Test-TTTicketNumber '10482') -and (Test-TTTicketNumber '#77') -and -not (Test-TTTicketNumber '12a') -and -not (Test-TTTicketNumber ''))
+$haloCalls = New-Object System.Collections.ArrayList
+$haloFile = Join-Path ([System.IO.Path]::GetTempPath()) ('tt-halo-' + [guid]::NewGuid().ToString('N') + '.html')
+[System.IO.File]::WriteAllText($haloFile, '<html>report</html>')
+& {
+    function Get-TTInput { @{ Url = 'https://example.halopsa.com'; Tenant = ''; ClientId = 'cid'; Secret = 'sec'; Outcome = ''; Ticket = '#10482'; NoteHtml = '<p>n</p>'; Html = $haloFile; AttachPdf = $false } }
+    function Write-Step { param($Text) }
+    function Write-Info { param($Text) }
+    function Write-Warn { param($Text) [void]$haloCalls.Add('WARN ' + $Text) }
+    function Invoke-RestMethod {
+        param($Method, $Uri, $Body, $Headers, $ContentType, $TimeoutSec, [switch]$UseBasicParsing)
+        $b = $Body; if ($b -is [byte[]]) { $b = [Text.Encoding]::UTF8.GetString($b) }
+        [void]$haloCalls.Add([pscustomobject]@{ Method = $Method; Uri = $Uri; Body = $b; Auth = $(if ($Headers) { $Headers.Authorization } else { '' }) })
+        if ($Uri -like '*/auth/token*') { return [pscustomobject]@{ access_token = 'tok' } }
+        if ($Uri -like '*/api/Tickets/*') { return [pscustomobject]@{ id = 10482; summary = 'PC slow' } }
+        if ($Uri -like '*/api/Actions') { return [pscustomobject]@{ id = 555 } }
+        return $null
+    }
+    . (Join-Path $root 'config/scripts/common/halo.ps1')
+}
+Remove-Item $haloFile -Force -ErrorAction SilentlyContinue
+$calls = @($haloCalls | Where-Object { $_ -isnot [string] })
+Check 'Halo send signs in, finds the ticket, adds a note, attaches' ($calls.Count -eq 4 -and $calls[0].Uri -eq 'https://example.halopsa.com/auth/token' -and $calls[1].Uri -like '*/api/Tickets/10482' -and $calls[2].Uri -like '*/api/Actions' -and $calls[3].Uri -like '*/api/Attachment')
+Check 'Halo note is private, on the right ticket' ($calls.Count -ge 3 -and $calls[2].Body -match '"hiddenfromuser":\s*true' -and $calls[2].Body -match '"ticket_id":\s*10482' -and $calls[2].Body -match 'Private Note')
+Check 'Halo attachment is linked to the note' ($calls.Count -ge 4 -and $calls[3].Body -match '"action_id":\s*555' -and $calls[3].Body -match 'data_base64')
+Check 'Halo asks only for ticket permissions' ($calls.Count -ge 1 -and $calls[0].Body.scope -eq 'read:tickets edit:tickets')
+Check 'Halo calls use the token' ($calls.Count -ge 4 -and $calls[1].Auth -eq 'Bearer tok' -and $calls[3].Auth -eq 'Bearer tok')
+Check 'Halo send logged no warnings' (@($haloCalls | Where-Object { $_ -is [string] }).Count -eq 0) (@($haloCalls | Where-Object { $_ -is [string] }) -join '; ')
+
+# Halo attachment falls back to other formats when Halo rejects the first
+$haloCalls2 = New-Object System.Collections.ArrayList
+$haloFile2 = Join-Path ([System.IO.Path]::GetTempPath()) ('tt-halo2-' + [guid]::NewGuid().ToString('N') + '.html')
+[System.IO.File]::WriteAllText($haloFile2, '<html>report</html>')
+& {
+    function Get-TTInput { @{ Url = 'https://example.halopsa.com'; ClientId = 'cid'; Secret = 'sec'; Ticket = '5'; NoteHtml = 'n'; Html = $haloFile2; AttachPdf = $false } }
+    function Write-Step { param($Text) }
+    function Write-Info { param($Text) [void]$haloCalls2.Add('INFO ' + $Text) }
+    function Write-Warn { param($Text) [void]$haloCalls2.Add('WARN ' + $Text) }
+    function Invoke-RestMethod {
+        param($Method, $Uri, $Body, $Headers, $ContentType, $TimeoutSec, [switch]$UseBasicParsing)
+        if ($Uri -like '*/auth/token*') { return [pscustomobject]@{ access_token = 'tok' } }
+        if ($Uri -like '*/api/Tickets/*') { return [pscustomobject]@{ id = 5; summary = 's' } }
+        if ($Uri -like '*/api/Actions') { return [pscustomobject]@{ id = 9 } }
+        $b = [Text.Encoding]::UTF8.GetString($Body)
+        [void]$haloCalls2.Add('ATT ' + $b.TrimStart().Substring(0, 1))
+        if ($b.TrimStart().StartsWith('{') -and $b -match 'data:text/html;base64,') { return $null }
+        throw 'HTTP 500'
+    }
+    . (Join-Path $root 'config/scripts/common/halo.ps1')
+}
+Remove-Item $haloFile2 -Force -ErrorAction SilentlyContinue
+Check 'Halo attachment tries other formats until one works' ((@($haloCalls2 | Where-Object { $_ -like 'ATT *' }).Count -eq 3) -and ($haloCalls2 -contains 'INFO Halo took attachment format 3') -and -not (@($haloCalls2 | Where-Object { $_ -like 'WARN*' }).Count))
+
 Write-Host ''
 if ($failures.Count -gt 0) { Write-Host "$($failures.Count) check(s) failed" -ForegroundColor Red; exit 1 }
 Write-Host 'All checks passed' -ForegroundColor Green

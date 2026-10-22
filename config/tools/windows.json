@@ -129,6 +129,15 @@
       "effect": "serverstatus",
       "info": "Tests a new login, saves it in Credential Manager for the signed-in user and reconnects their mapped drives.",
       "scriptFile": "scripts/windows/serverreauth.ps1"
+    },
+    {
+      "id": "halosend",
+      "type": "quick",
+      "hidden": true,
+      "tab": "diag",
+      "label": "Send report to HaloPSA ticket",
+      "info": "Adds a private note with the report summary to a HaloPSA ticket and attaches the report.",
+      "scriptFile": "scripts/common/halo.ps1"
     }
   ]
 }

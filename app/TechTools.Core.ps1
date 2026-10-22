@@ -497,3 +497,85 @@ function ConvertFrom-TTSecure {
     $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
     try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
 }
+
+# ------------------------------------------------- secrets locked by password ---
+# Used for the HaloPSA key in config/halo.json. AES-256-CBC, then HMAC-SHA256
+# over salt+iv+data; both keys come from PBKDF2-SHA256 of the team password.
+function Get-TTSecretKeys {
+    param([string]$Password, [byte[]]$Salt, [int]$Iterations)
+    $kdf = New-Object System.Security.Cryptography.Rfc2898DeriveBytes($Password, $Salt, $Iterations, [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    try { $b = $kdf.GetBytes(64) } finally { $kdf.Dispose() }
+    return @{ Enc = [byte[]]$b[0..31]; Mac = [byte[]]$b[32..63] }
+}
+
+function Protect-TTSecret {
+    param([string]$Secret, [string]$Password, [int]$Iterations = 600000)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $salt = New-Object byte[] 16; $iv = New-Object byte[] 16
+    try { $rng.GetBytes($salt); $rng.GetBytes($iv) } finally { $rng.Dispose() }
+    $k = Get-TTSecretKeys -Password $Password -Salt $salt -Iterations $Iterations
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    try {
+        $aes.Key = $k.Enc; $aes.IV = $iv; $aes.Mode = 'CBC'; $aes.Padding = 'PKCS7'
+        $plain = [Text.Encoding]::UTF8.GetBytes($Secret)
+        $enc = $aes.CreateEncryptor()
+        try { $data = $enc.TransformFinalBlock($plain, 0, $plain.Length) } finally { $enc.Dispose() }
+    } finally { $aes.Dispose() }
+    $hmac = New-Object System.Security.Cryptography.HMACSHA256(, $k.Mac)
+    try { $mac = $hmac.ComputeHash([byte[]]($salt + $iv + $data)) } finally { $hmac.Dispose() }
+    return [ordered]@{ kdf = 'pbkdf2-sha256'; iterations = $Iterations; salt = [Convert]::ToBase64String($salt)
+        iv = [Convert]::ToBase64String($iv); data = [Convert]::ToBase64String($data); mac = [Convert]::ToBase64String($mac) }
+}
+
+function Unprotect-TTSecret {
+    # Returns the secret, or $null if the password is wrong or the data was changed.
+    param($Box, [string]$Password)
+    if (-not $Box -or [string]$Box.kdf -ne 'pbkdf2-sha256' -or [int]$Box.iterations -lt 100000) { return $null }
+    try {
+        $salt = [Convert]::FromBase64String([string]$Box.salt); $iv = [Convert]::FromBase64String([string]$Box.iv)
+        $data = [Convert]::FromBase64String([string]$Box.data); $want = [Convert]::FromBase64String([string]$Box.mac)
+    } catch { return $null }
+    $k = Get-TTSecretKeys -Password $Password -Salt $salt -Iterations ([int]$Box.iterations)
+    $hmac = New-Object System.Security.Cryptography.HMACSHA256(, $k.Mac)
+    try { $got = $hmac.ComputeHash([byte[]]($salt + $iv + $data)) } finally { $hmac.Dispose() }
+    $diff = $want.Length -bxor $got.Length
+    for ($i = 0; $i -lt [math]::Min($want.Length, $got.Length); $i++) { $diff = $diff -bor ($want[$i] -bxor $got[$i]) }
+    if ($diff -ne 0) { return $null }
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    try {
+        $aes.Key = $k.Enc; $aes.IV = $iv; $aes.Mode = 'CBC'; $aes.Padding = 'PKCS7'
+        $dec = $aes.CreateDecryptor()
+        try { $plain = $dec.TransformFinalBlock($data, 0, $data.Length) } finally { $dec.Dispose() }
+    } finally { $aes.Dispose() }
+    return [Text.Encoding]::UTF8.GetString($plain)
+}
+
+# --------------------------------------------------------------- HaloPSA ---
+function ConvertTo-TTHaloNote {
+    # The private note added to the ticket: report title, PC, result and every problem/warning.
+    param($Report, [string]$Headline, [string]$Pc, [string]$RunBy)
+    $e = { param($t) [System.Net.WebUtility]::HtmlEncode([string]$t) }
+    $title = 'PC Health Check'
+    if ($Report.PSObject.Properties['Title'] -and $Report.Title) { $title = [string]$Report.Title }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('<p><b>MAV Tech Tools: ' + (& $e $title) + '</b><br>')
+    [void]$sb.Append('PC: ' + (& $e $Pc) + '<br>Result: ' + (& $e $Headline))
+    if ($Report.PSObject.Properties['Lead'] -and $Report.Lead) { [void]$sb.Append('<br>' + (& $e $Report.Lead)) }
+    [void]$sb.Append('</p>')
+    $bad = @($Report.Sections | Where-Object { $_.Level -eq 'fail' -or $_.Level -eq 'warn' })
+    if ($bad.Count) {
+        [void]$sb.Append('<ul>')
+        foreach ($s in $bad) {
+            $tag = 'WARNING'; if ($s.Level -eq 'fail') { $tag = 'PROBLEM' }
+            [void]$sb.Append('<li><b>' + $tag + '</b> ' + (& $e $s.Title) + ': ' + (& $e $s.Summary) + '</li>')
+        }
+        [void]$sb.Append('</ul>')
+    } else { [void]$sb.Append('<p>No problems found.</p>') }
+    [void]$sb.Append('<p><small>Run on ' + (& $e $Pc) + ' by ' + (& $e $RunBy) + ' at ' + (Get-Date).ToString('yyyy-MM-dd HH:mm') + '. Full report attached.</small></p>')
+    return $sb.ToString()
+}
+
+function Test-TTTicketNumber {
+    param([string]$Text)
+    return ([string]$Text).Trim().TrimStart('#') -match '^\d{1,9}$'
+}

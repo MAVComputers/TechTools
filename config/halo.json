@@ -1,0 +1,14 @@
+{
+  "url": "https://helpdesk.mavcomputers.com",
+  "tenant": "",
+  "clientId": "b54645e0-4903-4a9f-850b-a9873ecd289d",
+  "outcome": "Private Note",
+  "secret": {
+    "kdf": "pbkdf2-sha256",
+    "iterations": 600000,
+    "salt": "ajDFymz1SQ+0oD6eov5dtA==",
+    "iv": "biKugSYKBbUdVvA0jmkWng==",
+    "data": "zVqJVvxN6txcynaOYy/k9+TxInSDT+PX4LPH6OWk9NreKA1TvWB2hLXZUiMmHdPo",
+    "mac": "e2Mh7GHu2g3lmE23tnBLTeBRxCHGQ4O/uo0/fQyQmJg="
+  }
+}
