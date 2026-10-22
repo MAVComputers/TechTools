@@ -469,7 +469,7 @@ function Get-TTPasswordHash {
 }
 
 function New-TTAuthRecord {
-    param([string]$Password, [int]$Iterations = 210000)
+    param([string]$Password, [int]$Iterations = 600000)
     $salt = New-Object byte[] 16
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($salt) } finally { $rng.Dispose() }
