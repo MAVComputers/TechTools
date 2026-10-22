@@ -1,0 +1,11 @@
+<#
+<!doctype html><meta charset="utf-8"><title>MAV TechTools</title>
+<meta http-equiv="refresh" content="0; url=/">
+<style>html{background:#070B12}body{visibility:hidden}</style>
+Short launch address for MAV TechTools. Techs run this in an admin PowerShell window:
+    irm techtools.mavcomputers.com/go | iex
+GitHub Pages serves this file at /go as text/html, which Invoke-RestMethod returns
+as a string. The HTML sits inside a PowerShell block comment, so PowerShell skips it
+and a browser is sent to the landing page. Keep this file ASCII-only.
+#>
+irm 'https://techtools.mavcomputers.com/run.ps1' | iex

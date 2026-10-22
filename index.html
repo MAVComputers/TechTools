@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAV TechTools</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #070B12; color: #E6EDF5;
+         font-family: "Segoe UI", system-ui, sans-serif; padding: 24px; box-sizing: border-box; }
+  main { max-width: 640px; width: 100%; }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  .brand img { width: 48px; height: 48px; }
+  .brand b { font-size: 20px; display: block; }
+  .brand span { color: #24A7E0; font: 12px/1.4 Consolas, monospace; letter-spacing: .14em; }
+  h1 { font-size: 26px; margin: 0 0 8px; }
+  p { color: #8A99AD; line-height: 1.55; }
+  .cmd { display: flex; gap: 8px; margin: 20px 0; }
+  code { flex: 1; background: #0E1520; border: 1px solid #263449; border-radius: 10px; padding: 14px 16px;
+         font: 15px Consolas, monospace; color: #7DD3FC; overflow-x: auto; white-space: nowrap; }
+  button { background: #24A7E0; color: #04121A; border: 0; border-radius: 10px; padding: 0 18px; font-weight: 600;
+           font-size: 14px; cursor: pointer; min-height: 48px; }
+  button:hover { background: #4DBCEB; }
+  ol { color: #C9D4E3; line-height: 1.8; padding-left: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <img src="assets/mav-logo.svg" alt="MAV Computers logo">
+    <div><b>MAV Computers LLC</b><span>TECHTOOLS</span></div>
+  </div>
+  <h1>Start TechTools</h1>
+  <p>For MAV Computers technicians. Run this on the PC you are working on.</p>
+  <ol>
+    <li>Right-click Start and open <b>Terminal (Admin)</b> or <b>Windows PowerShell (Admin)</b>.</li>
+    <li>Paste this command and press Enter:</li>
+  </ol>
+  <div class="cmd">
+    <code id="cmd">irm techtools.mavcomputers.com/go | iex</code>
+    <button type="button" id="copy">Copy</button>
+  </div>
+  <p>The toolkit downloads, opens in its own window, and leaves nothing installed. Logs are saved to C:\ProgramData\MAVTechTools\Logs.</p>
+</main>
+<script>
+  document.getElementById('copy').addEventListener('click', function () {
+    var b = this;
+    navigator.clipboard.writeText(document.getElementById('cmd').textContent).then(function () {
+      b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1500);
+    });
+  });
+</script>
+</body>
+</html>

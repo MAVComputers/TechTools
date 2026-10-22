@@ -1,0 +1,134 @@
+{
+  "category": "windows",
+  "sharedFile": [
+    "scripts/windows/_shared.ps1",
+    "scripts/windows/server.ps1",
+    "scripts/windows/diag.ps1"
+  ],
+  "tabs": [
+    {
+      "id": "diag",
+      "title": "Diagnostics"
+    }
+  ],
+  "tools": [
+    {
+      "id": "healthcheck",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Run PC health check",
+      "cmd": "System, drives, network, speed, events, printers, updates, security",
+      "effect": "healthreport",
+      "info": "Read-only: changes nothing on the PC. Takes 1-3 minutes. Results show on this tab, and you can save them as a PDF.",
+      "scriptFile": "scripts/windows/healthcheck.ps1",
+      "group": "Checks (read-only)",
+      "icon": "pulse"
+    },
+    {
+      "id": "slowpc",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Slow PC check",
+      "cmd": "Uptime, CPU/RAM/disk over 30 s, C: space, startup apps",
+      "effect": "healthreport",
+      "info": "Read-only. Watches the PC for 30 seconds, then names the likely cause of slowness. Takes about 45 seconds.",
+      "scriptFile": "scripts/windows/slowpc.ps1",
+      "group": "Checks (read-only)",
+      "icon": "gauge"
+    },
+    {
+      "id": "printscan",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Printer and scanner check",
+      "cmd": "Spooler, offline printers, stuck jobs, WIA/TWAIN scanners",
+      "effect": "healthreport",
+      "info": "Read-only. Checks the Print Spooler, whether each printer answers on the network, stuck print jobs, and scanners and imaging devices.",
+      "scriptFile": "scripts/windows/printscan.ps1",
+      "group": "Checks (read-only)",
+      "icon": "printer"
+    },
+    {
+      "id": "printclear",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Clear stuck print jobs",
+      "cmd": "Restart spooler, empty the print queue",
+      "effect": "healthreport",
+      "info": "Restarts the Print Spooler and deletes EVERY job waiting to print on this PC, then re-checks printers and scanners.",
+      "scriptFile": "scripts/windows/printclear.ps1",
+      "group": "Fixes (change the PC)",
+      "icon": "printerx"
+    },
+    {
+      "id": "crashes",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Crash and BSOD history",
+      "cmd": "Blue screens, unexpected shutdowns, app crashes (30 days)",
+      "effect": "healthreport",
+      "info": "Read-only. Lists blue screens with stop codes, unexpected shutdowns and program crashes from the last 30 days. Names the faulting driver when WinDbg is installed.",
+      "scriptFile": "scripts/windows/crashes.ps1",
+      "group": "Checks (read-only)",
+      "icon": "alert"
+    },
+    {
+      "id": "repair",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Windows health repair",
+      "cmd": "DISM RestoreHealth, then SFC /scannow",
+      "effect": "healthreport",
+      "info": "Repairs Windows system files: DISM fixes the component store (needs internet), then SFC fixes system files. Takes 10-40 minutes. The report lists what was fixed; restart afterwards if files were repaired.",
+      "scriptFile": "scripts/windows/repair.ps1",
+      "group": "Fixes (change the PC)",
+      "icon": "wrench"
+    },
+    {
+      "id": "battery",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Battery and power report",
+      "cmd": "Battery wear, power plan, sleep blockers, wake-ups",
+      "effect": "healthreport",
+      "info": "Read-only. Battery health against its original capacity (laptops and tablets), power plan and sleep timeouts, what keeps the PC awake, and recent wake-ups. Also saves the full Windows battery report.",
+      "scriptFile": "scripts/windows/battery.ps1",
+      "group": "Checks (read-only)",
+      "icon": "battery"
+    },
+    {
+      "id": "timesync",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Time and domain sync",
+      "cmd": "Clock drift, time server, domain controller, trust",
+      "effect": "healthreport",
+      "info": "Read-only. Measures how far the clock is off, where Windows gets its time, and on domain PCs whether the domain controller answers and the trust is OK. Logins break when the clock is 5+ minutes off.",
+      "scriptFile": "scripts/windows/timesync.ps1",
+      "group": "Checks (read-only)",
+      "icon": "clock"
+    },
+    {
+      "id": "servercheck",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Check server connection",
+      "cmd": "Server reachable, saved login, share access, mapped drives",
+      "effect": "serverstatus",
+      "info": "Checks that this PC can reach and log in to the office server. Read-only. If the login fails, the Office server card offers Re-authenticate.",
+      "scriptFile": "scripts/windows/servercheck.ps1",
+      "group": "Office server",
+      "icon": "server"
+    },
+    {
+      "id": "serverreauth",
+      "type": "quick",
+      "hidden": true,
+      "tab": "diag",
+      "label": "Re-authenticate to office server",
+      "effect": "serverstatus",
+      "info": "Tests a new login, saves it in Credential Manager for the signed-in user and reconnects their mapped drives.",
+      "scriptFile": "scripts/windows/serverreauth.ps1"
+    }
+  ]
+}
