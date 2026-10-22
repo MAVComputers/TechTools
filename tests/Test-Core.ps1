@@ -313,6 +313,30 @@ Check 'Halo asks only for ticket permissions' ($calls.Count -ge 1 -and $calls[0]
 Check 'Halo calls use the token' ($calls.Count -ge 4 -and $calls[1].Auth -eq 'Bearer tok' -and $calls[3].Auth -eq 'Bearer tok')
 Check 'Halo send logged no warnings' (@($haloCalls | Where-Object { $_ -is [string] }).Count -eq 0) (@($haloCalls | Where-Object { $_ -is [string] }) -join '; ')
 
+# Halo attachment falls back to other formats when Halo rejects the first
+$haloCalls2 = New-Object System.Collections.ArrayList
+$haloFile2 = Join-Path ([System.IO.Path]::GetTempPath()) ('tt-halo2-' + [guid]::NewGuid().ToString('N') + '.html')
+[System.IO.File]::WriteAllText($haloFile2, '<html>report</html>')
+& {
+    function Get-TTInput { @{ Url = 'https://example.halopsa.com'; ClientId = 'cid'; Secret = 'sec'; Ticket = '5'; NoteHtml = 'n'; Html = $haloFile2; AttachPdf = $false } }
+    function Write-Step { param($Text) }
+    function Write-Info { param($Text) [void]$haloCalls2.Add('INFO ' + $Text) }
+    function Write-Warn { param($Text) [void]$haloCalls2.Add('WARN ' + $Text) }
+    function Invoke-RestMethod {
+        param($Method, $Uri, $Body, $Headers, $ContentType, $TimeoutSec, [switch]$UseBasicParsing)
+        if ($Uri -like '*/auth/token*') { return [pscustomobject]@{ access_token = 'tok' } }
+        if ($Uri -like '*/api/Tickets/*') { return [pscustomobject]@{ id = 5; summary = 's' } }
+        if ($Uri -like '*/api/Actions') { return [pscustomobject]@{ id = 9 } }
+        $b = [Text.Encoding]::UTF8.GetString($Body)
+        [void]$haloCalls2.Add('ATT ' + $b.TrimStart().Substring(0, 1))
+        if ($b.TrimStart().StartsWith('{') -and $b -match 'data:text/html;base64,') { return $null }
+        throw 'HTTP 500'
+    }
+    . (Join-Path $root 'config/scripts/common/halo.ps1')
+}
+Remove-Item $haloFile2 -Force -ErrorAction SilentlyContinue
+Check 'Halo attachment tries other formats until one works' ((@($haloCalls2 | Where-Object { $_ -like 'ATT *' }).Count -eq 3) -and ($haloCalls2 -contains 'INFO Halo took attachment format 3') -and -not (@($haloCalls2 | Where-Object { $_ -like 'WARN*' }).Count))
+
 Write-Host ''
 if ($failures.Count -gt 0) { Write-Host "$($failures.Count) check(s) failed" -ForegroundColor Red; exit 1 }
 Write-Host 'All checks passed' -ForegroundColor Green

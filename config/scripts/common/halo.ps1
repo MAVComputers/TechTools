@@ -104,17 +104,31 @@ else {
     $data = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($file))
     $sent = $false
     $lastErr = ''
-    $tries = @($true, $false)
-    if (-not $actionId) { $tries = @($false) }
-    foreach ($withAction in $tries) {
+    $mime = 'text/html'
+    if ($name -like '*.pdf') { $mime = 'application/pdf' }
+    # Halo versions differ in the attachment format they accept. Try the known
+    # shapes in turn and stop at the first one Halo takes.
+    $shapes = @(
+        @{ Array = $true;  DataUri = $false; Action = $true },
+        @{ Array = $true;  DataUri = $true;  Action = $false },
+        @{ Array = $false; DataUri = $true;  Action = $false },
+        @{ Array = $false; DataUri = $false; Action = $false },
+        @{ Array = $true;  DataUri = $false; Action = $false }
+    )
+    $n = 0
+    foreach ($sh in $shapes) {
+        $n++
+        if ($sh.Action -and -not $actionId) { continue }
         $att = @{ ticket_id = $ticket; filename = $name; data_base64 = $data }
-        if ($withAction) { $att.action_id = [int]$actionId }
-        $abody = ConvertTo-Json -InputObject @($att) -Depth 3
+        if ($sh.DataUri) { $att.data_base64 = 'data:' + $mime + ';base64,' + $data }
+        if ($sh.Action) { $att.action_id = [int]$actionId }
+        if ($sh.Array) { $abody = ConvertTo-Json -InputObject @($att) -Depth 3 } else { $abody = ConvertTo-Json -InputObject $att -Depth 3 }
         try {
             $null = Invoke-RestMethod -Method Post -Uri ($base + '/api/Attachment') -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($abody)) -ContentType 'application/json; charset=utf-8' -TimeoutSec 60 -UseBasicParsing
             $sent = $true
+            Write-Info ('Halo took attachment format ' + $n)
             break
-        } catch { $lastErr = Get-HaloError $_ 'Attaching the report' }
+        } catch { $lastErr = Get-HaloError $_ ('Attaching the report (format ' + $n + ')') }
     }
     if ($sent) { Write-Info ('Attached ' + $name) }
     else { Write-Warn ('The note was added but the attachment failed. ' + $lastErr) }
