@@ -165,6 +165,31 @@ $html = [System.IO.File]::ReadAllText($rep)
 Check 'report uses its own title and name' ((Split-Path -Leaf $rep) -like 'SlowPC-*' -and $html -match '<h1>Slow PC Check:' -and $html -match 'Likely cause: test')
 Remove-Item $rep -Force
 
+Write-Host 'Dental'
+$den = $catalog | Where-Object { $_.Id -eq 'dental' }
+Check 'dental category is live' ($den -and -not $den.ComingSoon)
+$mw = @($den.Tools | Where-Object { $_.Id -eq 'mouthwatch' })[0]
+Check 'MouthWatch IOC is a quick button on 3rd Party Apps' ($mw -and $mw.Type -eq 'quick' -and $mw.Tab -eq '3p' -and $mw.Label -eq 'MouthWatch IOC')
+Check 'MouthWatch downloads over https from mouthwatch.com' ($mw.Script -match "https://mouthwatch\.com/wp-content/uploads/downloads/setupmouthwatch\.exe")
+Check 'MouthWatch shows a notice card' ($mw.Notice -and $mw.Notice.Title)
+# Worker-only helpers the install scripts call
+if (-not (Get-Command Write-Info -ErrorAction SilentlyContinue)) { function Write-Info { param([string]$Text) } }
+if (-not (Get-Command Write-Warn -ErrorAction SilentlyContinue)) { function Write-Warn { param([string]$Text) } }
+. ([scriptblock]::Create($den.Shared))
+$threw = $false; try { Save-TTDownload -Url 'http://example.com/x.exe' -Name 'x.exe' } catch { $threw = $_.Exception.Message -match 'https' }
+Check 'plain http downloads refused' $threw
+$threw = $false; try { Save-TTDownload -Url 'https://example.com/x.exe' -Name '..\x.exe' } catch { $threw = $_.Exception.Message -match 'Bad file name' }
+Check 'download file names checked' $threw
+if ($env:OS -eq 'Windows_NT') {
+    $dl = Save-TTDownload -Url 'https://www.microsoft.com/favicon.ico' -Name 'tt-test.ico'
+    Check 'live download works' ((Test-Path $dl) -and (Get-Item $dl).Length -gt 0)
+    Remove-Item $dl -Force
+    $acl = (Get-Acl (Get-TTDownloadFolder)).Access | Where-Object { $_.IdentityReference -match 'Users|Everyone|Authenticated' }
+    Check 'download folder is admin-only' (@($acl).Count -eq 0)
+    $ok = $true; try { Assert-TTSignature (Join-Path $env:windir 'System32\WindowsPowerShell\v1.0\powershell.exe') } catch { $ok = $false }
+    Check 'signed Windows file passes the signature check' $ok
+}
+
 Write-Host 'Office server'
 $x = Split-TTUnc '\\OFFICE-SRV\Data\Sub\'
 Check 'UNC path split' ($x.Server -eq 'OFFICE-SRV' -and $x.Share -eq 'Data' -and $x.Root -eq '\\OFFICE-SRV\Data')

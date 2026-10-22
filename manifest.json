@@ -6,6 +6,8 @@
     "app/TechTools.Core.ps1",
     "app/TechTools.ps1",
     "config/categories.json",
+    "config/scripts/common/installer.ps1",
+    "config/scripts/dental/mouthwatch.ps1",
     "config/scripts/internet/_shared.ps1",
     "config/scripts/windows/_shared.ps1",
     "config/scripts/windows/battery.ps1",
@@ -20,6 +22,7 @@
     "config/scripts/windows/serverreauth.ps1",
     "config/scripts/windows/slowpc.ps1",
     "config/scripts/windows/timesync.ps1",
+    "config/tools/dental.json",
     "config/tools/internet.json",
     "config/tools/windows.json"
   ]

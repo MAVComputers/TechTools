@@ -56,6 +56,12 @@ function ConvertTo-TTTool {
     if ($type -eq 'choice') { if (-not $default) { $default = 'none' } } else { $default = [bool]$default }
     $package = [string](Get-TTProp $Raw 'package' '')
     $cmd = [string](Get-TTProp $Raw 'cmd' '')
+    # notice: a card shown after the button is pressed, e.g. an installer password with a Copy button.
+    $notice = $null
+    $n = Get-TTProp $Raw 'notice'
+    if ($n) {
+        $notice = [pscustomobject]@{ Title = [string](Get-TTProp $n 'title' ''); Text = [string](Get-TTProp $n 'text' ''); Copy = [string](Get-TTProp $n 'copy' '') }
+    }
     if (-not $cmd -and $type -eq 'winget') { $cmd = $package }
     return [pscustomobject]@{
         Id       = [string](Get-TTProp $Raw 'id')
@@ -72,6 +78,7 @@ function ConvertTo-TTTool {
         Package  = $package
         Script   = $script
         Options  = $options
+        Notice   = $notice
     }
 }
 

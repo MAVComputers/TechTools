@@ -46,6 +46,7 @@ $script:State = @{
     NetStatus = $null; NetChecked = 'Not checked yet'; Diag = $null
     RestartNeeded = $false; RestartWhy = (New-Object System.Collections.ArrayList); RestartScheduled = $false
     Health = $null; HealthError = ''; Pdf = $null; Server = $null; ServerError = ''
+    Notices = @{}
 }
 $script:SeenVersion = -1
 
@@ -381,6 +382,11 @@ function Render-Category {
             [void]$qw.Children.Add($b)
         }
         [void]$p.Children.Add($qw)
+    }
+
+    # Notices for buttons pressed this session (for example an installer password)
+    foreach ($q in $quick) {
+        if ($q.Notice -and $script:State.Notices[$q.Id]) { [void]$p.Children.Add((New-NoticeCard $q)) }
     }
 
     # Clear: reset Diagnostics results as if TechTools was just opened
@@ -742,6 +748,56 @@ function Render-Status {
 # ------------------------------------------------------- Office server ---
 $script:ServerConfigPath = Join-Path $env:ProgramData 'MAVTechTools\server.json'
 
+function New-NoticeCard {
+    # Card with a title, a line of text and an optional value with a Copy button.
+    param($Tool)
+    $n = $Tool.Notice
+    $card = New-Card -Padding '18'
+    $card.Background = Get-Brush '#0A1019'
+    $card.BorderBrush = Get-Brush '#1D5A78'
+    $card.Margin = '0,0,0,16'
+    $dock = New-Object Windows.Controls.DockPanel
+    $hide = New-Button 'Hide'
+    $hide.VerticalAlignment = 'Top'
+    $hide.Tag = $Tool.Id
+    $hide.Add_Click({ $script:State.Notices.Remove([string]$this.Tag); Render-Page })
+    [Windows.Controls.DockPanel]::SetDock($hide, 'Right')
+    [void]$dock.Children.Add($hide)
+    $sp = New-Object Windows.Controls.StackPanel
+    $title = $n.Title
+    if (-not $title) { $title = $Tool.Label }
+    [void]$sp.Children.Add((New-Text $title.ToUpper() -Size 11 -Color $script:Colors.accent -Mono))
+    if ($n.Text) { [void]$sp.Children.Add((New-Text $n.Text -Color $script:Colors.plain -Wrap -Margin '0,6,0,0')) }
+    if ($n.Copy) {
+        $row = New-Object Windows.Controls.StackPanel
+        $row.Orientation = 'Horizontal'
+        $row.Margin = '0,10,0,0'
+        $box = New-Object Windows.Controls.TextBox
+        $box.Text = $n.Copy
+        $box.IsReadOnly = $true
+        $box.FontFamily = 'Consolas'
+        $box.FontSize = 20
+        $box.Padding = '12,6'
+        $box.Background = Get-Brush '#0E1520'
+        $box.Foreground = Get-Brush $script:Colors.text
+        $box.BorderBrush = Get-Brush '#263449'
+        $box.VerticalContentAlignment = 'Center'
+        [void]$row.Children.Add($box)
+        $copy = New-Button 'Copy' -Style 'PrimaryBtn' -Icon 'file' -IconColor '#04121A'
+        $copy.Margin = '10,0,0,0'
+        $copy.Tag = $n.Copy
+        $copy.Add_Click({
+            try { [Windows.Clipboard]::SetText([string]$this.Tag); Add-ConsoleLine 'Copied to the clipboard.' 'ok' }
+            catch { Add-ConsoleLine ('Could not copy: ' + $_.Exception.Message) 'warn' }
+        })
+        [void]$row.Children.Add($copy)
+        [void]$sp.Children.Add($row)
+    }
+    [void]$dock.Children.Add($sp)
+    $card.Child = $dock
+    return $card
+}
+
 function Clear-Diagnostics {
     $script:State.Health = $null
     $script:State.HealthError = ''
@@ -761,6 +817,8 @@ function Invoke-QuickTool {
         if (-not (Show-ServerSetup)) { return }
     }
     Invoke-Tool $script:State.Page $Id
+    $tool = @((Get-Cat $script:State.Page).Tools | Where-Object { $_.Id -eq $Id })[0]
+    if ($tool -and $tool.Notice -and -not $script:State.Notices[$Id]) { $script:State.Notices[$Id] = $true; Render-Page; return }
     if ($script:HealthHost) { Render-Health }
     if ($script:ServerHost) { Render-Server }
 }
@@ -1559,6 +1617,13 @@ if ($SmokeTest) {
     if ($null -eq $script:ServerHost -or $script:ServerHost.Children.Count -ne 1) { Write-Host 'FAIL server card did not render'; $errors++ }
     Clear-Diagnostics
     if ($script:State.Health -or $script:State.Server) { Write-Host 'FAIL Clear did not reset results'; $errors++ }
+    # Notice card (installer password) after an install button is pressed
+    $script:State.Page = 'dental'; $script:State.Tab['dental'] = '3p'
+    Render-Page; $before = $script:UI.PagePanel.Children.Count
+    $script:State.Notices['mouthwatch'] = $true
+    Render-Page
+    if ($script:UI.PagePanel.Children.Count -ne $before + 1) { Write-Host 'FAIL notice card did not render'; $errors++ }
+    $script:State.Notices = @{}
     $script:State.Page = 'internet'
     Render-Page
     $net = Get-Cat 'internet'

@@ -14,8 +14,9 @@
       "title": "Dental",
       "longTitle": "Dental Programs",
       "blurb": "Practice-management systems, imaging, third-party apps and workstation prep.",
-      "tiles": "Practice Management - Imaging - 3rd Party Apps - Workstation Prep",
-      "icon": "dental"
+      "tiles": "3rd Party Apps - more coming: Practice Management, Imaging, Workstation Prep",
+      "icon": "dental",
+      "file": "tools/dental.json"
     },
     {
       "id": "ophth",

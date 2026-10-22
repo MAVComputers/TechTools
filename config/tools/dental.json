@@ -1,0 +1,27 @@
+{
+  "category": "dental",
+  "sharedFile": [
+    "scripts/common/installer.ps1"
+  ],
+  "tabs": [
+    {
+      "id": "3p",
+      "title": "3rd Party Apps"
+    }
+  ],
+  "tools": [
+    {
+      "id": "mouthwatch",
+      "type": "quick",
+      "tab": "3p",
+      "label": "MouthWatch IOC",
+      "cmd": "Download the MouthWatch installer and start it",
+      "info": "Downloads setupmouthwatch.exe from mouthwatch.com, checks its digital signature and starts the installer. Finish the install on screen.",
+      "scriptFile": "scripts/dental/mouthwatch.ps1",
+      "notice": {
+        "title": "MouthWatch IOC installer",
+        "text": "The installer asks for a password during setup."
+      }
+    }
+  ]
+}
