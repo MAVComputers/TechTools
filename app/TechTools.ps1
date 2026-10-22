@@ -90,6 +90,7 @@ $script:Icons = @{
     pulse   = 'M3,12 L7,12 L10,4 L14,20 L17,12 L21,12'
     file    = 'M6,2 H14 L20,8 V22 H6 Z M14,2 V8 H20'
     folder  = 'M3,6 H10 L12,8 H21 V19 H3 Z'
+    trash   = 'M4,7 H20 M10,11 V17 M14,11 V17 M6,7 L7,20 H17 L18,7 M9,7 V4 H15 V7'
 }
 function New-Icon {
     param([string]$Name, [double]$Size = 16, [string]$Color = '#E6EDF5', [switch]$Fill)
@@ -367,6 +368,18 @@ function Render-Category {
             [void]$qw.Children.Add($b)
         }
         [void]$p.Children.Add($qw)
+    }
+
+    # Clear: reset Diagnostics results as if TechTools was just opened
+    $hasReports = @($Cat.Tools | Where-Object { ($_.Effect -eq 'serverstatus' -or $_.Effect -eq 'healthreport') -and $_.Tab -eq $current }).Count -gt 0
+    $busyReports = (Test-ToolBusy 'healthcheck') -or (Test-ToolBusy 'servercheck') -or (Test-ToolBusy 'serverreauth')
+    if ($hasReports -and ($script:State.Health -or $script:State.Server -or $script:State.HealthError -or $script:State.ServerError) -and -not $busyReports) {
+        $clr = New-Button 'Clear' -Icon 'trash'
+        $clr.HorizontalAlignment = 'Right'
+        $clr.Margin = '0,-6,0,12'
+        $clr.ToolTip = 'Clear results, finished actions and the console, as if TechTools was just opened. The session log file is kept.'
+        $clr.Add_Click({ Clear-Diagnostics })
+        [void]$p.Children.Add($clr)
     }
 
     # Office server card (Windows > Diagnostics)
@@ -711,6 +724,19 @@ function Render-Status {
 
 # ------------------------------------------------------- Office server ---
 $script:ServerConfigPath = Join-Path $env:ProgramData 'MAVTechTools\server.json'
+
+function Clear-Diagnostics {
+    $script:State.Health = $null
+    $script:State.HealthError = ''
+    $script:State.Server = $null
+    $script:State.ServerError = ''
+    foreach ($j in $script:Sync.Jobs.ToArray()) { if ($j.Status -ne 'queued' -and $j.Status -ne 'running') { $script:Sync.Jobs.Remove($j) } }
+    $script:Sync.Version++
+    $script:ConsoleItems.Clear()
+    Add-ConsoleLine 'Cleared. Ready for the next check.' 'muted'
+    Render-Page
+    $script:UI.MainScroll.ScrollToTop()
+}
 
 function Invoke-QuickTool {
     param([string]$Id)
@@ -1484,6 +1510,8 @@ if ($SmokeTest) {
         Checks = @([pscustomobject]@{ Name = 'File sharing'; Level = 'ok'; Detail = 'Server answers' }, [pscustomobject]@{ Name = 'Share access'; Level = 'fail'; Detail = 'Rejected' }) }
     Render-Server
     if ($null -eq $script:ServerHost -or $script:ServerHost.Children.Count -ne 1) { Write-Host 'FAIL server card did not render'; $errors++ }
+    Clear-Diagnostics
+    if ($script:State.Health -or $script:State.Server) { Write-Host 'FAIL Clear did not reset results'; $errors++ }
     $script:State.Page = 'internet'
     Render-Page
     $net = Get-Cat 'internet'
