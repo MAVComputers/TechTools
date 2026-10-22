@@ -1102,6 +1102,46 @@ function Show-LoginDialog {
     return (New-Object System.Management.Automation.PSCredential($ub.Text.Trim(), $pb.SecurePassword))
 }
 
+function New-LockDialog {
+    # The startup password window. Returns @{ Window; Panel; Box }.
+    param([string]$Problem = '')
+    $d = New-Dialog 'Unlock TechTools' 'Enter the MAV team password to open TechTools.' 'Unlock'
+    $d.Window.ShowInTaskbar = $true
+    $d.Window.Topmost = $true
+    $d.Window.WindowStartupLocation = 'CenterScreen'
+    $box = Add-DialogField $d 'Team password' -Password
+    if ($Problem) { [void]$d.Panel.Children.Add((New-Text $Problem -Size 12 -Color $script:Colors.fail -Wrap -Margin '0,8,0,0')) }
+    $d.Box = $box
+    return $d
+}
+
+function Request-TeamPassword {
+    # Asks for the team password before the main window opens. False = do not open.
+    $authPath = Join-Path (Join-Path $ConfigRoot 'config') 'auth.json'
+    $auth = $null
+    try { $auth = Read-TTJson $authPath } catch { }
+    if (-not $auth) {
+        [void][Windows.MessageBox]::Show('TechTools could not load its password file. Run the start command again.', 'MAV TechTools', 'OK', 'Error')
+        return $false
+    }
+    $problem = ''
+    for ($try = 1; $try -le 5; $try++) {
+        $d = New-LockDialog $problem
+        $d.Window.Add_ContentRendered({ $this.Activate() | Out-Null })
+        $d.Box.Focus() | Out-Null
+        if (-not $d.Window.ShowDialog()) { return $false }
+        $ok = $false
+        if ($d.Box.SecurePassword.Length -gt 0) {
+            $ok = Test-TTPassword -Password (ConvertFrom-TTSecure $d.Box.SecurePassword) -Auth $auth
+        }
+        if ($ok) { return $true }
+        Start-Sleep -Milliseconds 800
+        $problem = 'Wrong password. {0} tries left.' -f (5 - $try)
+    }
+    [void][Windows.MessageBox]::Show('Too many wrong passwords. TechTools will close.', 'MAV TechTools', 'OK', 'Warning')
+    return $false
+}
+
 function Start-ServerReauth {
     param([string]$Mode)
     $st = $script:State.Server
@@ -1818,12 +1858,20 @@ if ($SmokeTest) {
     if ($script:UI.JobList.Items.Count -ne $jobs.Count) { Write-Host 'FAIL job list did not render'; $errors++ }
     $script:Window.Content.Measure((New-Object Windows.Size 1440, 900))
     $script:Window.Content.Arrange((New-Object Windows.Rect 0, 0, 1440, 900))
+    # Startup password window builds, and the shipped password file is valid
+    $lock = New-LockDialog 'Wrong password. 4 tries left.'
+    if (-not $lock.Box -or $lock.Panel.Children.Count -lt 3) { Write-Host 'FAIL password window did not build'; $errors++ }
+    try { $a = Read-TTJson (Join-Path (Join-Path $ConfigRoot 'config') 'auth.json'); if ([string]$a.kdf -ne 'pbkdf2-sha256' -or -not $a.hash) { throw 'bad' } }
+    catch { Write-Host 'FAIL config/auth.json missing or invalid'; $errors++ }
     if ($errors) { exit 1 }
     Write-Host 'Smoke test passed: every page rendered'
     exit 0
 }
 
 # ------------------------------------------------------------------- run ---
+# Ask for the team password before anything runs or the window shows.
+if (-not (Request-TeamPassword)) { exit }
+Add-ConsoleLine 'Unlocked with the team password' 'muted'
 # From here on, a problem in one click must not close the whole window.
 $ErrorActionPreference = 'Continue'
 $script:Window.Dispatcher.Add_UnhandledException({

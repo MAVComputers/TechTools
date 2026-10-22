@@ -1,10 +1,11 @@
 {
-  "version": "0.1.0",
+  "version": "0.1.1",
   "files": [
     "app/logo.path.txt",
     "app/MainWindow.xaml",
     "app/TechTools.Core.ps1",
     "app/TechTools.ps1",
+    "config/auth.json",
     "config/categories.json",
     "config/scripts/common/installer.ps1",
     "config/scripts/dental/mouthwatch.ps1",

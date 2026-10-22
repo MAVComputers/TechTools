@@ -28,6 +28,13 @@ start. (One step runs as the signed-in user on purpose: after a server
 re-authenticate, drives are remapped in that user's own session.) Each session writes a log to
 `C:\ProgramData\MAVTechTools\Logs` (the **Open logs** button opens it).
 
+Before the window opens, TechTools asks for the **MAV team password** (5 tries,
+then it closes). The password itself is never stored: `config/auth.json` holds
+only a salted PBKDF2-SHA256 hash. To change it, run
+`pwsh -File tools/Set-TeamPassword.ps1` (12+ characters, because the repo is
+public), commit `config/auth.json` and merge. This stops casual use only;
+anyone can still read the scripts in this public repo.
+
 How it works on screen:
 
 1. Pick a category in the top menu, then a tab.

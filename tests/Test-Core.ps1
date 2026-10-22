@@ -256,6 +256,20 @@ if ($env:OS -eq 'Windows_NT') {
     $PSDefaultParameterValues.Remove('*:ErrorAction')
 }
 
+# Startup password: only a salted hash ships, right password opens, wrong ones do not
+$authFile = Join-Path (Join-Path $root 'config') 'auth.json'
+$auth = Read-TTJson $authFile
+Check 'password file is a PBKDF2 hash' ([string]$auth.kdf -eq 'pbkdf2-sha256' -and [int]$auth.iterations -ge 100000 -and [Convert]::FromBase64String([string]$auth.hash).Length -eq 32)
+Check 'password file holds no plain password' (@($auth.PSObject.Properties.Name | Where-Object { $_ -notin @('kdf', 'iterations', 'salt', 'hash') }).Count -eq 0)
+$rec = New-TTAuthRecord -Password 'correct horse battery' -Iterations 100000
+$recObj = [pscustomobject]$rec
+Check 'right password unlocks' (Test-TTPassword -Password 'correct horse battery' -Auth $recObj)
+Check 'wrong password is refused' (-not (Test-TTPassword -Password 'correct horse batterY' -Auth $recObj))
+Check 'empty password is refused' (-not (Test-TTPassword -Password '' -Auth $recObj))
+Check 'weak hash settings are refused' (-not (Test-TTPassword -Password 'x' -Auth ([pscustomobject]@{ kdf = 'pbkdf2-sha256'; iterations = 1; salt = 'AA=='; hash = 'AA==' })))
+$sec = New-Object Security.SecureString; foreach ($ch in 'abc'.ToCharArray()) { $sec.AppendChar($ch) }
+Check 'secure text converts for hashing' ((ConvertFrom-TTSecure $sec) -eq 'abc')
+
 Write-Host ''
 if ($failures.Count -gt 0) { Write-Host "$($failures.Count) check(s) failed" -ForegroundColor Red; exit 1 }
 Write-Host 'All checks passed' -ForegroundColor Green
