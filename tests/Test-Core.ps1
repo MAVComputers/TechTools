@@ -309,6 +309,7 @@ $calls = @($haloCalls | Where-Object { $_ -isnot [string] })
 Check 'Halo send signs in, finds the ticket, adds a note, attaches' ($calls.Count -eq 4 -and $calls[0].Uri -eq 'https://example.halopsa.com/auth/token' -and $calls[1].Uri -like '*/api/Tickets/10482' -and $calls[2].Uri -like '*/api/Actions' -and $calls[3].Uri -like '*/api/Attachment')
 Check 'Halo note is private, on the right ticket' ($calls.Count -ge 3 -and $calls[2].Body -match '"hiddenfromuser":\s*true' -and $calls[2].Body -match '"ticket_id":\s*10482' -and $calls[2].Body -match 'Private Note')
 Check 'Halo attachment is linked to the note' ($calls.Count -ge 4 -and $calls[3].Body -match '"action_id":\s*555' -and $calls[3].Body -match 'data_base64')
+Check 'Halo asks only for ticket permissions' ($calls.Count -ge 1 -and $calls[0].Body.scope -eq 'read:tickets edit:tickets')
 Check 'Halo calls use the token' ($calls.Count -ge 4 -and $calls[1].Auth -eq 'Bearer tok' -and $calls[3].Auth -eq 'Bearer tok')
 Check 'Halo send logged no warnings' (@($haloCalls | Where-Object { $_ -is [string] }).Count -eq 0) (@($haloCalls | Where-Object { $_ -is [string] }) -join '; ')
 

@@ -35,7 +35,7 @@ function Get-HaloError {
 Write-Step 'Connecting to HaloPSA'
 $tokenUrl = $base + '/auth/token'
 if ($in.Tenant) { $tokenUrl += '?tenant=' + [Uri]::EscapeDataString([string]$in.Tenant) }
-$scope = 'all'
+$scope = 'read:tickets edit:tickets'
 if ($in.Scope) { $scope = [string]$in.Scope }
 $form = @{ grant_type = 'client_credentials'; client_id = [string]$in.ClientId; client_secret = [string]$in.Secret; scope = $scope }
 try { $tok = Invoke-RestMethod -Method Post -Uri $tokenUrl -Body $form -ContentType 'application/x-www-form-urlencoded' -TimeoutSec 30 -UseBasicParsing }

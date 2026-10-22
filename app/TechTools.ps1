@@ -1224,7 +1224,7 @@ function Open-HaloConfig {
     try { $cfg = Read-TTJson $path } catch { return }
     $secret = Unprotect-TTSecret -Box $cfg.secret -Password $Password
     if (-not $secret) { $script:HaloProblem = 'The HaloPSA key could not be unlocked with this password.'; return }
-    $script:Halo = @{ Url = [string]$cfg.url; Tenant = [string]$cfg.tenant; ClientId = [string]$cfg.clientId; Outcome = [string]$cfg.outcome; Secret = $secret }
+    $script:Halo = @{ Url = [string]$cfg.url; Tenant = [string]$cfg.tenant; ClientId = [string]$cfg.clientId; Outcome = [string]$cfg.outcome; Scope = [string]$cfg.scope; Secret = $secret }
 }
 
 function Show-HaloSend {
@@ -1268,7 +1268,7 @@ function Show-HaloSend {
     $job = New-TTJob -Category $cat -Tool $tool
     $job.Name = 'Send ' + $title + ' to HaloPSA #' + $ticket.TrimStart('#')
     $job.Input = @{ Url = $script:Halo.Url; Tenant = $script:Halo.Tenant; ClientId = $script:Halo.ClientId; Secret = $script:Halo.Secret
-        Outcome = $script:Halo.Outcome; Ticket = $ticket; NoteHtml = $note; Html = [string]$res.Html; AttachPdf = [bool]$cb.IsChecked }
+        Outcome = $script:Halo.Outcome; Scope = $script:Halo.Scope; Ticket = $ticket; NoteHtml = $note; Html = [string]$res.Html; AttachPdf = [bool]$cb.IsChecked }
     Add-Jobs @($job)
 }
 

@@ -228,9 +228,31 @@ function Get-TTShortText {
 }
 
 # ---------------------------------------------------------------- Network
+function Get-TTNetConfigs {
+    # Get-NetIPConfiguration, or the same fields built by hand when it throws.
+    # It throws on some PCs ("Exception setting NetAdapter") when two adapters
+    # share an interface, for example with VPN or Hyper-V adapters.
+    try { return @(Get-NetIPConfiguration -ErrorAction Stop) } catch { }
+    $out = @()
+    foreach ($a in @(Get-NetAdapter -ErrorAction SilentlyContinue)) {
+        $i = $a.ifIndex
+        $out += [pscustomobject]@{
+            InterfaceAlias       = $a.Name
+            InterfaceDescription = $a.InterfaceDescription
+            InterfaceIndex       = $i
+            NetAdapter           = $a
+            IPv4Address          = @(Get-NetIPAddress -InterfaceIndex $i -AddressFamily IPv4 -ErrorAction SilentlyContinue)
+            IPv4DefaultGateway   = @(Get-NetRoute -InterfaceIndex $i -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue)
+            DNSServer            = @(Get-DnsClientServerAddress -InterfaceIndex $i -ErrorAction SilentlyContinue)
+            NetIPv4Interface     = (Get-NetIPInterface -InterfaceIndex $i -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1)
+        }
+    }
+    return $out
+}
+
 function Get-TTHealthNetwork {
     $s = New-TTSection 'Network'
-    $cfgs = @(Get-NetIPConfiguration | Where-Object { $_.NetAdapter.Status -eq 'Up' })
+    $cfgs = @(Get-TTNetConfigs | Where-Object { $_.NetAdapter -and $_.NetAdapter.Status -eq 'Up' })
     if ($cfgs.Count -eq 0) {
         $s.Level = 'fail'
         $s.Summary = 'No connected network adapter'
