@@ -493,7 +493,7 @@ function Render-Sections {
         # Section header in the accent color, underlined, so it stands apart from the tweaks
         [void]$hd.Children.Add((New-Text $name -Size 15 -Weight SemiBold -Color $script:Colors.accent))
         $hdLine = New-Object Windows.Controls.Border
-        $hdLine.BorderBrush = $script:Colors.line; $hdLine.BorderThickness = '0,0,0,1'
+        $hdLine.BorderBrush = Get-Brush $script:Colors.line; $hdLine.BorderThickness = '0,0,0,1'
         $hdLine.Padding = '0,0,0,8'; $hdLine.Margin = '0,0,0,6'; $hdLine.Child = $hd
         [void]$sp.Children.Add($hdLine)
         $script:SectionCounts += @{ Text = $cnt; Tools = @($groups[$name]) }
