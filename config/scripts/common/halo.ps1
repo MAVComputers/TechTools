@@ -10,26 +10,42 @@ if ($base -notmatch '^https://') { throw 'The HaloPSA address must start with ht
 $ticket = [int]([string]$in.Ticket).Trim().TrimStart('#')
 
 function Get-HaloError {
-    param($Err)
+    param($Err, [string]$Step)
     $code = 0
     try { $code = [int]$Err.Exception.Response.StatusCode } catch { }
-    if ($code -eq 401 -or $code -eq 403) { return 'HaloPSA refused the TechTools key (check the API application and its permissions).' }
-    if ($code -eq 404) { return 'HaloPSA could not find that ticket.' }
-    return ('HaloPSA error: ' + $Err.Exception.Message)
+    $detail = ''
+    try { $detail = [string]$Err.ErrorDetails.Message } catch { }
+    if (-not $detail) {
+        try {
+            $sr = New-Object System.IO.StreamReader($Err.Exception.Response.GetResponseStream())
+            $detail = $sr.ReadToEnd()
+        } catch { }
+    }
+    $detail = ($detail -replace '\s+', ' ').Trim()
+    if ($detail.Length -gt 300) { $detail = $detail.Substring(0, 300) + '...' }
+    $msg = $Step + ' failed'
+    if ($code) { $msg += ' (HTTP ' + $code + ')' }
+    if ($code -eq 401 -or $code -eq 403) { $msg += ': HaloPSA refused the TechTools key or its permissions' }
+    elseif ($code -eq 404) { $msg += ': not found' }
+    else { $msg += ': ' + $Err.Exception.Message }
+    if ($detail) { $msg += ' Halo said: ' + $detail }
+    return $msg
 }
 
 Write-Step 'Connecting to HaloPSA'
 $tokenUrl = $base + '/auth/token'
 if ($in.Tenant) { $tokenUrl += '?tenant=' + [Uri]::EscapeDataString([string]$in.Tenant) }
-$form = @{ grant_type = 'client_credentials'; client_id = [string]$in.ClientId; client_secret = [string]$in.Secret; scope = 'all' }
+$scope = 'all'
+if ($in.Scope) { $scope = [string]$in.Scope }
+$form = @{ grant_type = 'client_credentials'; client_id = [string]$in.ClientId; client_secret = [string]$in.Secret; scope = $scope }
 try { $tok = Invoke-RestMethod -Method Post -Uri $tokenUrl -Body $form -ContentType 'application/x-www-form-urlencoded' -TimeoutSec 30 -UseBasicParsing }
-catch { throw (Get-HaloError $_) }
+catch { throw (Get-HaloError $_ 'Sign-in to HaloPSA') }
 if (-not $tok.access_token) { throw 'HaloPSA did not return a sign-in token.' }
 $headers = @{ Authorization = 'Bearer ' + $tok.access_token }
 
 Write-Step ('Finding ticket #' + $ticket)
 try { $t = Invoke-RestMethod -Method Get -Uri ($base + '/api/Tickets/' + $ticket) -Headers $headers -TimeoutSec 30 -UseBasicParsing }
-catch { throw (Get-HaloError $_) }
+catch { throw (Get-HaloError $_ ('Finding ticket #' + $ticket)) }
 Write-Info ('Ticket #' + $ticket + ': ' + [string]$t.summary)
 
 Write-Step 'Adding a private note'
@@ -38,7 +54,7 @@ if ($in.Outcome) { $outcome = [string]$in.Outcome }
 $action = @(@{ ticket_id = $ticket; outcome = $outcome; note_html = [string]$in.NoteHtml; hiddenfromuser = $true })
 $body = ConvertTo-Json -InputObject $action -Depth 4
 try { $res = Invoke-RestMethod -Method Post -Uri ($base + '/api/Actions') -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($body)) -ContentType 'application/json; charset=utf-8' -TimeoutSec 30 -UseBasicParsing }
-catch { throw (Get-HaloError $_) }
+catch { throw (Get-HaloError $_ 'Adding the note') }
 $actionId = $null
 try { $actionId = @($res)[0].id } catch { }
 
@@ -64,7 +80,7 @@ else {
     if ($actionId) { $att.action_id = [int]$actionId }
     $abody = ConvertTo-Json -InputObject @($att) -Depth 3
     try { $null = Invoke-RestMethod -Method Post -Uri ($base + '/api/Attachment') -Headers $headers -Body ([Text.Encoding]::UTF8.GetBytes($abody)) -ContentType 'application/json; charset=utf-8' -TimeoutSec 60 -UseBasicParsing }
-    catch { Write-Warn ('The note was added but the attachment failed. ' + (Get-HaloError $_)) }
+    catch { Write-Warn ('The note was added but the attachment failed. ' + (Get-HaloError $_ 'Attaching the report')) }
     Write-Info ('Attached ' + [System.IO.Path]::GetFileName($file))
 }
 Write-Info ('Sent to HaloPSA ticket #' + $ticket + ' as MAV Tech Tools')
