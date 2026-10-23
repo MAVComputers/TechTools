@@ -731,6 +731,16 @@ function Start-Selected {
     $jobs = Get-TTSelectionJobs -Category $cat -Sel $script:State.Sel -Choice $script:State.Choice
     if ($jobs.Count -eq 0) { return }
     Add-Jobs $jobs
+    # Untick everything that was just queued so the next run does not repeat it.
+    Clear-CategorySelection $cat
+    Render-Sections
+}
+
+function Clear-CategorySelection {
+    param($Cat)
+    $prefix = $Cat.Id + ':'
+    foreach ($k in @($script:State.Sel.Keys | Where-Object { $_.StartsWith($prefix) })) { $script:State.Sel.Remove($k) }
+    foreach ($k in @($script:State.Choice.Keys | Where-Object { $_.StartsWith($prefix) })) { $script:State.Choice.Remove($k) }
 }
 
 # ---------------------------------------------------- Internet status panel ---
@@ -1991,6 +2001,8 @@ if ($SmokeTest) {
     $script:Sync.Version++
     Invoke-Tick
     if ($script:UI.JobList.Items.Count -ne $jobs.Count) { Write-Host 'FAIL job list did not render'; $errors++ }
+    Clear-CategorySelection (Get-Cat 'internet')
+    if ($script:State.Sel['internet:flushdns'] -or $script:State.Choice['internet:dns']) { Write-Host 'FAIL ticks not cleared after a run'; $errors++ }
     $script:Window.Content.Measure((New-Object Windows.Size 1440, 900))
     $script:Window.Content.Arrange((New-Object Windows.Rect 0, 0, 1440, 900))
     # Home: PC at a glance with sample values, then the Dental program pages
