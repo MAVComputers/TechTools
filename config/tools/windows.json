@@ -156,6 +156,16 @@
       "scriptFile": "scripts/windows/serverreauth.ps1"
     },
     {
+      "id": "serverbrowse",
+      "type": "quick",
+      "hidden": true,
+      "tab": "diag",
+      "label": "Find shares on the office server",
+      "effect": "serverbrowse",
+      "info": "Checks the server answers, checks or tests the login, then lists its shares.",
+      "scriptFile": "scripts/windows/serverbrowse.ps1"
+    },
+    {
       "id": "halosend",
       "type": "quick",
       "hidden": true,

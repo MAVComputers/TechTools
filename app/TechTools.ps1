@@ -1092,39 +1092,130 @@ function Add-DialogField {
 }
 
 function Show-ServerSetup {
-    # Asks for the office server share; saves it on this PC only.
-    $cfg = Get-ServerConfig
-    $unc = ''; $drive = ''
-    if ($cfg) { $unc = [string]$cfg.Unc; $drive = [string]$cfg.Drive }
-    while ($true) {
-        $d = New-Dialog 'Office server' 'Saved on this PC only (C:\ProgramData\MAVTechTools). No passwords are stored here.' 'Save and check'
-        $box = Add-DialogField $d 'Server share' $unc -Hint 'For example \\OFFICE-SRV\Data or \\192.168.1.10\Shared'
-        [void]$d.Panel.Children.Add((New-Text 'Drive letter (optional)' -Weight SemiBold -Margin '0,12,0,4'))
-        $cb = New-Object Windows.Controls.ComboBox
-        $none = New-Object Windows.Controls.ComboBoxItem; $none.Content = 'Keep the drives the user already has'; $none.Tag = ''
-        [void]$cb.Items.Add($none)
-        $cb.SelectedIndex = 0
-        foreach ($c in [char[]]'DEFGHIJKLMNOPQRSTUVWXYZ') {
-            $it = New-Object Windows.Controls.ComboBoxItem; $it.Content = "${c}:"; $it.Tag = "${c}:"
-            [void]$cb.Items.Add($it)
-            if ($drive -eq "${c}:") { $cb.SelectedItem = $it }
-        }
-        [void]$d.Panel.Children.Add($cb)
-        [void]$d.Panel.Children.Add((New-Text 'Used when the user has no drive mapped to this server yet.' -Size 11 -Color $script:Colors.muted -Wrap -Margin '0,4,0,0'))
+    # Step 1 of setting up the office server: ask only for the server name, then
+    # a background job checks it answers, checks the login and lists its shares.
+    # The rest happens in Complete-ServerBrowse when that job finishes.
+    # Returns $false: nothing is saved until a share is picked.
+    param([string]$Server = '')
+    if (-not $Server) {
+        $cfg = Get-ServerConfig
+        if ($cfg) { $u = Split-TTUnc ([string]$cfg.Unc); if ($u) { $Server = $u.Server } }
+        $d = New-Dialog 'Office server' 'Enter just the server name. TechTools checks this PC can log in, then shows the shares to pick from. Saved on this PC only.' 'Find shares'
+        $box = Add-DialogField $d 'Server name or IP' $Server -Hint 'For example OFFICE-SRV or 192.168.1.10'
         $box.Focus() | Out-Null
+        $box.SelectAll()
         if (-not $d.Window.ShowDialog()) { return $false }
-        $unc = $box.Text.Trim().TrimEnd('\')
-        $drive = [string]$cb.SelectedItem.Tag
-        if ($unc -match '^\\\\[^\\/:*?"<>|]+\\[^\\/:*?"<>|]+') { break }
-        [void][Windows.MessageBox]::Show('Enter the share as \\SERVER\Share (two backslashes, the server, then the share name).', 'MAV TechTools', 'OK', 'Warning')
+        $Server = $box.Text.Trim()
+        if (-not $Server) { return $false }
     }
+    Start-ServerBrowse $Server $null
+    return $false
+}
+
+function Start-ServerBrowse {
+    param([string]$Server, $Credential)
+    $cat = Get-Cat 'windows'
+    $tool = @($cat.Tools | Where-Object { $_.Id -eq 'serverbrowse' })[0]
+    $job = New-TTJob -Category $cat -Tool $tool
+    $job.Name = 'Find shares on ' + $Server
+    $job.Input = @{ Server = $Server; Credential = $Credential }
+    Add-Jobs @($job)
+}
+
+function Complete-ServerBrowse {
+    # Step 2: react to the browse job. Ask for a login, or let the tech pick a share.
+    param($Job)
+    $r = $Job.Result
+    if ($Job.Status -ne 'done' -or -not $r) {
+        [void][Windows.MessageBox]::Show(('Could not set up the server: ' + [string]$Job.Error), 'MAV TechTools', 'OK', 'Warning')
+        return
+    }
+    switch ([string]$r.Kind) {
+        'auth' {
+            $cred = Show-LoginDialog ('Log in to ' + $r.Server) ($r.Message + ' It is tested first, then saved in Credential Manager for the signed-in user.') ''
+            if ($cred) { Start-ServerBrowse $r.Server $cred }
+        }
+        'ok' {
+            if (-not @($r.Shares).Count) {
+                [void][Windows.MessageBox]::Show(($r.Server + ' has no shared folders this login can see.'), 'MAV TechTools', 'OK', 'Warning')
+                return
+            }
+            $w = New-SharePickerDialog $r
+            if (-not $w.ShowDialog()) { return }
+            $pick = $w.Tag
+            Save-ServerConfig ('\\' + $r.Server + '\' + $pick.Share) $pick.Drive
+            Invoke-Tool 'windows' 'servercheck'
+            if ($script:ServerHost) { Render-Server }
+        }
+        default {
+            $again = [Windows.MessageBox]::Show(($r.Message + "`r`n`r`nTry a different server name?"), 'MAV TechTools', 'YesNo', 'Warning')
+            if ([string]$again -eq 'Yes') { [void](Show-ServerSetup) }
+        }
+    }
+}
+
+function New-SharePickerDialog {
+    # Step 3: list the shares; pick one and an optional drive letter. Window.Tag = @{ Share; Drive }.
+    param($Browse)
+    $cfg = Get-ServerConfig
+    $drive = ''
+    if ($cfg) { $drive = [string]$cfg.Drive }
+    $d = New-Dialog ('Shares on ' + $Browse.Server) 'Pick the office data share. Saved on this PC only; no passwords are stored here.' 'Save and check'
+    $w = $d.Window
+    $lb = New-Object Windows.Controls.ListBox
+    $lb.MaxHeight = 260
+    $lb.Background = Get-Brush '#0E1520'
+    $lb.BorderBrush = Get-Brush '#263449'
+    $lb.Foreground = Get-Brush $script:Colors.text
+    foreach ($sh in @($Browse.Shares)) {
+        $it = New-Object Windows.Controls.ListBoxItem
+        $sp = New-Object Windows.Controls.StackPanel
+        $sp.Margin = '4,3'
+        [void]$sp.Children.Add((New-Text ('\\' + $Browse.Server + '\' + $sh.Name) -Weight SemiBold))
+        if ($sh.Comment) { [void]$sp.Children.Add((New-Text $sh.Comment -Size 11 -Color $script:Colors.muted)) }
+        $it.Content = $sp
+        $it.Tag = [string]$sh.Name
+        [void]$lb.Items.Add($it)
+        if ($Browse.Want -and $sh.Name -eq $Browse.Want) { $lb.SelectedItem = $it }
+        elseif (-not $lb.SelectedItem -and $cfg -and [string]$cfg.Unc -like ('*\' + $sh.Name)) { $lb.SelectedItem = $it }
+    }
+    if (-not $lb.SelectedItem -and $lb.Items.Count) { $lb.SelectedIndex = 0 }
+    [void]$d.Panel.Children.Add($lb)
+    [void]$d.Panel.Children.Add((New-Text 'Drive letter (optional)' -Weight SemiBold -Margin '0,12,0,4'))
+    $cb = New-Object Windows.Controls.ComboBox
+    $none = New-Object Windows.Controls.ComboBoxItem; $none.Content = 'Keep the drives the user already has'; $none.Tag = ''
+    [void]$cb.Items.Add($none)
+    $cb.SelectedIndex = 0
+    foreach ($c in [char[]]'DEFGHIJKLMNOPQRSTUVWXYZ') {
+        $it = New-Object Windows.Controls.ComboBoxItem; $it.Content = "${c}:"; $it.Tag = "${c}:"
+        [void]$cb.Items.Add($it)
+        if ($drive -eq "${c}:") { $cb.SelectedItem = $it }
+    }
+    [void]$d.Panel.Children.Add($cb)
+    [void]$d.Panel.Children.Add((New-Text 'Used when the user has no drive mapped to this server yet.' -Size 11 -Color $script:Colors.muted -Wrap -Margin '0,4,0,0'))
+    # Save: remember the pick on the window before it closes.
+    $row = $w.Content.Children[$w.Content.Children.Count - 1]
+    $ok = $row.Children[$row.Children.Count - 1]
+    $ok.Tag = @{ Window = $w; List = $lb; Combo = $cb }
+    $ok.Add_Click({
+        $t = $this.Tag
+        if (-not $t.List.SelectedItem) { return }
+        $t.Window.Tag = @{ Share = [string]$t.List.SelectedItem.Tag; Drive = [string]$t.Combo.SelectedItem.Tag }
+        $t.Window.DialogResult = $true
+    })
+    $lb.Tag = $ok
+    $lb.Add_MouseDoubleClick({ $this.Tag.RaiseEvent((New-Object Windows.RoutedEventArgs([Windows.Controls.Button]::ClickEvent))) })
+    return $w
+}
+
+function Save-ServerConfig {
+    param([string]$Unc, [string]$Drive)
     New-Item -ItemType Directory -Path (Split-Path -Parent $script:ServerConfigPath) -Force | Out-Null
-    $json = [ordered]@{ Unc = $unc; Drive = $drive; Saved = (Get-Date).ToString('s') } | ConvertTo-Json
+    $json = [ordered]@{ Unc = $Unc; Drive = $Drive; Saved = (Get-Date).ToString('s') } | ConvertTo-Json
     [System.IO.File]::WriteAllText($script:ServerConfigPath, $json)
     $script:State.Server = $null
     $script:State.ServerError = ''
-    Add-ConsoleLine ('Office server set to ' + $unc) 'info'
-    return $true
+    Add-ConsoleLine ('Office server set to ' + $Unc) 'info'
 }
 
 function Show-LoginDialog {
@@ -1842,6 +1933,7 @@ function Complete-FinishedJobs {
     $statusChanged = $false
     $healthChanged = $false
     $serverChanged = $false
+    $browse = $null
     foreach ($j in $script:Sync.Jobs.ToArray()) {
         if ($j.Handled -or ($j.Status -ne 'done' -and $j.Status -ne 'failed')) { continue }
         $j.Handled = $true
@@ -1858,6 +1950,7 @@ function Complete-FinishedJobs {
                 $script:State.ServerError = ''
             } else { $script:State.ServerError = [string]$j.Error }
         }
+        if ($j.Effect -eq 'serverbrowse') { $browse = $j }
         if ($j.Effect -eq 'healthreport') {
             $healthChanged = $true
             if ($j.Status -eq 'done' -and $j.Result) { $script:State.Health = $j.Result; $script:State.HealthError = '' }
@@ -1880,6 +1973,12 @@ function Complete-FinishedJobs {
     if ($statusChanged) { Render-Status }
     if ($healthChanged -and $script:HealthHost) { Render-Health }
     if ($serverChanged -and $script:ServerHost) { Render-Server }
+    # Server setup dialogs open from the timer, so guard against opening twice.
+    if ($browse -and -not $script:InServerBrowse) {
+        $script:InServerBrowse = $true
+        try { Complete-ServerBrowse $browse } catch { Add-ConsoleLine ('Server setup error: ' + $_.Exception.Message) 'fail' }
+        finally { $script:InServerBrowse = $false }
+    }
     if ($pageChanged -and ($script:State.Page -eq 'home' -or $script:State.Page -eq 'dental')) { Render-Page }
     Update-RestartBanner
 }
@@ -2039,6 +2138,11 @@ if ($SmokeTest) {
     $rpw = New-RestorePointDialog 3
     if (-not $rpw -or $rpw.Content.Children[$rpw.Content.Children.Count - 1].Children.Count -ne 3) { Write-Host 'FAIL restore point dialog did not build'; $errors++ }
     if ($rpw) { $rpw.Close() }
+    $spw = New-SharePickerDialog @{ Server = 'OFFICE-SRV'; Want = 'Data'; Shares = @([pscustomobject]@{ Name = 'Public'; Comment = '' }, [pscustomobject]@{ Name = 'Data'; Comment = 'Office data' }) }
+    $splb = @($spw.Content.Children[2].Children | Where-Object { $_ -is [Windows.Controls.ListBox] })[0]
+    if (-not $splb -or $splb.Items.Count -ne 2 -or [string]$splb.SelectedItem.Tag -ne 'Data') { Write-Host 'FAIL share picker did not build'; $errors++ }
+    if ($spw) { $spw.Close() }
+    if (-not @((Get-Cat 'windows').Tools | Where-Object { $_.Id -eq 'serverbrowse' }).Count) { Write-Host 'FAIL serverbrowse tool missing'; $errors++ }
     $script:Window.Content.Measure((New-Object Windows.Size 1440, 900))
     $script:Window.Content.Arrange((New-Object Windows.Rect 0, 0, 1440, 900))
     # Home: PC at a glance with sample values, then the Dental program pages
