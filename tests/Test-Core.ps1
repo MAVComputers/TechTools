@@ -21,6 +21,7 @@ Check 'catalog has no problems' ($problems.Count -eq 0) "($($problems.Count) pro
 $net = $catalog | Where-Object { $_.Id -eq 'internet' }
 Check 'internet category is live' ($net -and -not $net.ComingSoon)
 Check 'internet has tools' (@($net.Tools).Count -gt 10)
+Check 'every category has its own color' (@($catalog | Where-Object { $_.Color -notmatch '^#[0-9A-Fa-f]{6}$' }).Count -eq 0 -and @($catalog.Color | Select-Object -Unique).Count -eq $catalog.Count)
 
 Write-Host 'Files'
 $ps1 = Get-ChildItem -Path $root -Recurse -Include *.ps1 -File | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' }

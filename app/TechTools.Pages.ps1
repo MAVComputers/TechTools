@@ -33,7 +33,9 @@ function New-StatTile {
     param([string]$Label, [string]$Value, [string]$Sub, [string]$Level = 'ok', [double]$Width = 200)
     $c = New-Card -Width $Width -Padding '12'
     $c.Margin = '0,0,10,10'
-    if ($Level -eq 'warn') { $c.BorderBrush = Get-Brush '#5A4A1F' } elseif ($Level -eq 'fail') { $c.BorderBrush = Get-Brush '#5A2626' }
+    $hot = ($Level -eq 'warn' -or $Level -eq 'fail')
+    if ($hot) { $c.Background = Get-Brush (Get-Tint $script:Colors[$Level] 0.07) }
+    if ($Level -eq 'warn') { $c.BorderBrush = Get-Brush '#8A6B1E' } elseif ($Level -eq 'fail') { $c.BorderBrush = Get-Brush '#8C3535' }
     $sp = New-Object Windows.Controls.StackPanel
     $row = New-Object Windows.Controls.StackPanel
     $row.Orientation = 'Horizontal'
@@ -43,7 +45,8 @@ function New-StatTile {
     [void]$row.Children.Add($d)
     [void]$row.Children.Add((New-Text $Label.ToUpper() -Size 10 -Color $script:Colors.muted -Mono))
     [void]$sp.Children.Add($row)
-    [void]$sp.Children.Add((New-Text $Value -Size 15 -Weight SemiBold -Wrap -Margin '0,4,0,2'))
+    $vc = $script:Colors.text; if ($hot) { $vc = $script:Colors[$Level] }
+    [void]$sp.Children.Add((New-Text $Value -Size 15 -Weight SemiBold -Color $vc -Wrap -Margin '0,4,0,2'))
     if ($Sub) { [void]$sp.Children.Add((New-Text $Sub -Size 12 -Color $script:Colors.muted -Wrap)) }
     $c.Child = $sp
     return $c
@@ -74,10 +77,11 @@ function New-FixTile {
     $dock = New-Object Windows.Controls.DockPanel
     $box = New-Object Windows.Controls.Border
     $box.Width = 36; $box.Height = 36; $box.CornerRadius = 10
-    $box.BorderThickness = 1; $box.BorderBrush = Get-Brush '#1D5A78'; $box.Background = Get-Brush '#0A1622'
+    $pc = Get-PageColor
+    $box.BorderThickness = 1; $box.BorderBrush = Get-Brush (Get-Tint $pc 0.4); $box.Background = Get-Brush (Get-Tint $pc 0.12)
     $box.Margin = '0,0,12,0'
     if (-not $script:Icons.ContainsKey($Icon)) { $Icon = 'bolt' }
-    $ic = New-Icon -Name $Icon -Size 18 -Color $script:Colors.accent
+    $ic = New-Icon -Name $Icon -Size 18 -Color $pc
     $ic.HorizontalAlignment = 'Center'; $ic.VerticalAlignment = 'Center'
     $box.Child = $ic
     [Windows.Controls.DockPanel]::SetDock($box, 'Left')
@@ -392,7 +396,7 @@ function Render-DentalTop {
         if (-not $script:Dental.Found.ContainsKey($id)) { continue }
         $any = $true
         $b = New-ActionButton ($pr.name + '  ' + $script:Dental.Found[$id]) @{ Do = 'goto'; Cat = 'dental'; Tab = $(if ([string]$pr.kind -like 'img*') { 'img' } else { 'pm' }); Prog = $id } -Icon 'bolt'
-        $b.BorderBrush = Get-Brush '#1F4D3D'
+        $b.BorderBrush = Get-Brush '#1F6E52'
         $b.Margin = '0,0,8,8'
         $b.ToolTip = 'Open the ' + $pr.name + ' page'
         [void]$chips.Children.Add($b)
@@ -482,7 +486,7 @@ function Render-DentalGrid {
             $b.HorizontalContentAlignment = 'Left'
             $found = $script:Dental.Found.ContainsKey($id)
             $mine = ($o.Pm -eq $id -or $o.Img -eq $id)
-            if ($mine) { $b.BorderBrush = Get-Brush '#1E5562' } elseif ($found) { $b.BorderBrush = Get-Brush '#1F4D3D' }
+            if ($mine) { $b.BorderBrush = Get-Brush '#1E5562' } elseif ($found) { $b.BorderBrush = Get-Brush '#1F6E52' }
             $sp = New-Object Windows.Controls.StackPanel
             [void]$sp.Children.Add((New-Text $pr.name -Size $(if ($g.Big) { 17 } else { 14 }) -Weight SemiBold))
             [void]$sp.Children.Add((New-Text $pr.vendor -Size 12 -Color $script:Colors.muted -Margin '0,2,0,6'))
@@ -494,7 +498,7 @@ function Render-DentalGrid {
                 $x.Child = (New-Text $t -Size 10 -Color $fg -Mono)
                 [void]$bw.Children.Add($x)
             }
-            if ($found) { & $badge ('ON THIS PC ' + $script:Dental.Found[$id]) '#34D399' '#1F4D3D' }
+            if ($found) { & $badge ('ON THIS PC ' + $script:Dental.Found[$id]) '#34D399' '#1F6E52' }
             if ($mine) { & $badge 'THIS OFFICE' '#22D3EE' '#1E5562' }
             if (Get-PProp $pr 'generic' $false) { & $badge 'STANDARD FIXES' '#8A99AD' '#263449' }
             [void]$sp.Children.Add($bw)
@@ -516,7 +520,7 @@ function Render-SensorCard {
     $card.Margin = '0,0,0,16'
     $warn = @()
     if ($st) { $warn = @($st.Rows | Where-Object { $_.Level -ne 'ok' }) }
-    if ($st -and -not $busy) { if ($warn.Count) { $card.BorderBrush = Get-Brush '#5A4A1F' } else { $card.BorderBrush = Get-Brush '#1F4D3D' } } else { $card.BorderBrush = Get-Brush '#1D5A78' }
+    if ($st -and -not $busy) { if ($warn.Count) { $card.BorderBrush = Get-Brush '#8A6B1E' } else { $card.BorderBrush = Get-Brush '#1F6E52' } } else { $card.BorderBrush = Get-Brush '#1D5A78' }
     $sp = New-Object Windows.Controls.StackPanel
     $dock = New-Object Windows.Controls.DockPanel
     $btns = New-Object Windows.Controls.StackPanel
@@ -611,9 +615,9 @@ function Render-DentalProgram {
     elseif ($chk -and (Get-PProp $chk 'Error' '')) { $head = 'Check failed: ' + $chk.Error; $hc = $script:Colors.fail }
     elseif ($chk) {
         $w = @($levels | Where-Object { $_ -eq 'warn' }).Count
-        if ($levels -contains 'fail') { $head = 'Needs attention'; $hc = $script:Colors.fail; $card.BorderBrush = Get-Brush '#5A2626' }
-        elseif ($w) { $head = ('Mostly OK, ' + $w + ' to fix'); $hc = $script:Colors.warn; $card.BorderBrush = Get-Brush '#5A4A1F' }
-        else { $head = 'All checks passed'; $hc = $script:Colors.ok; $card.BorderBrush = Get-Brush '#1F4D3D' }
+        if ($levels -contains 'fail') { $head = 'Needs attention'; $hc = $script:Colors.fail; $card.BorderBrush = Get-Brush '#8C3535' }
+        elseif ($w) { $head = ('Mostly OK, ' + $w + ' to fix'); $hc = $script:Colors.warn; $card.BorderBrush = Get-Brush '#8A6B1E' }
+        else { $head = 'All checks passed'; $hc = $script:Colors.ok; $card.BorderBrush = Get-Brush '#1F6E52' }
     } elseif ($isCloud -and $kind -eq 'cloud') { $head = 'Runs in the browser' }
     elseif ($found) { $head = 'Installed: ' + $script:Dental.Found[$id]; $hc = $script:Colors.ok }
     else { $head = 'Not found on this PC' }
@@ -712,8 +716,8 @@ function Render-DentalProgram {
     [void]$ns.Children.Add((New-Label 'Program notes' $script:Colors.muted))
     $nb = New-Object Windows.Controls.Border
     $nb.CornerRadius = 8; $nb.BorderThickness = 1; $nb.Padding = '10,6'; $nb.Margin = '0,10,0,10'
-    if (Get-PProp $P 'confirmed' $false) { $nb.BorderBrush = Get-Brush '#1F4D3D'; $nb.Background = Get-Brush '#0E1A18'; $ncol = $script:Colors.ok }
-    else { $nb.BorderBrush = Get-Brush '#5A4A1F'; $nb.Background = Get-Brush '#17140A'; $ncol = $script:Colors.warn }
+    if (Get-PProp $P 'confirmed' $false) { $nb.BorderBrush = Get-Brush '#1F6E52'; $nb.Background = Get-Brush '#0E1A18'; $ncol = $script:Colors.ok }
+    else { $nb.BorderBrush = Get-Brush '#8A6B1E'; $nb.Background = Get-Brush '#17140A'; $ncol = $script:Colors.warn }
     $nb.Child = (New-Text ([string]$P.note) -Size 12 -Color $ncol -Wrap)
     [void]$ns.Children.Add($nb)
     [void]$ns.Children.Add((New-Text ([string]$P.about) -Color $script:Colors.plain -Wrap -Margin '0,0,0,10'))
@@ -854,7 +858,7 @@ function Render-Home {
     $ac = New-Card -Padding '16'
     $ac.Background = Get-Brush '#0A1019'
     $ac.Margin = '0,0,0,16'
-    if (@($att | Where-Object { $_.Lv -eq 'fail' }).Count) { $ac.BorderBrush = Get-Brush '#5A2626' } elseif ($att.Count) { $ac.BorderBrush = Get-Brush '#5A4A1F' } else { $ac.BorderBrush = Get-Brush '#1F4D3D' }
+    if (@($att | Where-Object { $_.Lv -eq 'fail' }).Count) { $ac.BorderBrush = Get-Brush '#8C3535' } elseif ($att.Count) { $ac.BorderBrush = Get-Brush '#8A6B1E' } else { $ac.BorderBrush = Get-Brush '#1F6E52' }
     $as = New-Object Windows.Controls.StackPanel
     $title = 'All good'
     if ($att.Count -eq 1) { $title = '1 thing needs attention' } elseif ($att.Count) { $title = ([string]$att.Count + ' things need attention') }

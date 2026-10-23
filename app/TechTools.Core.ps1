@@ -99,6 +99,7 @@ function Import-TTCatalog {
             Blurb        = [string](Get-TTProp $c 'blurb' '')
             Tiles        = [string](Get-TTProp $c 'tiles' '')
             Icon         = [string](Get-TTProp $c 'icon' '')
+            Color        = [string](Get-TTProp $c 'color' '')
             RestorePoint = [bool](Get-TTProp $c 'restorePoint' $false)
             ComingSoon   = $true
             StatusPanel  = $false
