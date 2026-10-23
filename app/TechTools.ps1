@@ -1950,7 +1950,7 @@ if ($SmokeTest) {
         Recommend = @([pscustomobject]@{ Id = 'flushdns'; Value = $null }, [pscustomobject]@{ Id = 'dns'; Value = 'cloudflare' }) }
     Render-Page
     Select-Recommended
-    $script:State.Page = 'windows'
+    $script:State.Page = 'windows'; $script:State.Tab['windows'] = 'diag'
     $fakeSec = [pscustomobject]@{ Title = 'Drives and health'; Level = 'fail'; Summary = '1 drive - FAILURE SIGNS FOUND'
         Facts = @([pscustomobject]@{ Label = 'PC name'; Value = 'TEST-PC'; Level = '' })
         Tables = @([pscustomobject]@{ Caption = 'Physical drives'; Columns = @('Disk', 'Model', 'Problems')
