@@ -25,7 +25,7 @@ jobs:
       - name: Window smoke test (builds every page without showing it)
         shell: powershell
         run: |
-          $out = powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\app\TechTools.ps1 -SmokeTest 2>&1 | ForEach-Object { [string]$_ }
+          $out = powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\app\TechTools.ps1 -SmokeTest | ForEach-Object { [string]$_ }
           $code = $LASTEXITCODE
           $out | ForEach-Object { Write-Host $_ }
           # Failures also become annotations, so they can be read without the full log.
