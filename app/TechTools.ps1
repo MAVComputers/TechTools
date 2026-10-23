@@ -193,6 +193,7 @@ function Show-Page {
     if ($cat -and $cat.StatusPanel -and $null -eq $script:State.NetStatus -and -not (Test-ToolBusy 'netstatus')) {
         Invoke-Tool $cat.Id 'netstatus'
     }
+    if ($Id -eq 'dental' -and -not $script:Dental.ScanAt -and -not $SmokeTest) { Start-DentalScan }
 }
 
 function Update-Nav {
@@ -237,36 +238,6 @@ function Add-PageHeader {
     [void]$p.Children.Add((New-Text $Eyebrow.ToUpper() -Size 11 -Color $script:Colors.accent -Mono))
     [void]$p.Children.Add((New-Text $Title -Size 30 -Weight SemiBold -Margin '0,6,0,6'))
     if ($Blurb) { [void]$p.Children.Add((New-Text $Blurb -Size 14 -Color $script:Colors.muted -Wrap -Margin '0,0,0,18')) }
-}
-
-function Render-Home {
-    Add-PageHeader 'Home' 'What are we fixing today?' 'Pick a category to see its tools. Every run shows up in the Action Center on the right.'
-    $wrap = New-Object Windows.Controls.WrapPanel
-    $wrap.Margin = '0,8,0,0'
-    foreach ($cat in $script:Catalog) {
-        $b = New-Object Windows.Controls.Button
-        $b.Style = $script:Window.FindResource('TileBtn')
-        $b.Uid = $cat.Id
-        $sp = New-Object Windows.Controls.StackPanel
-        $iconBox = New-Object Windows.Controls.Border
-        $iconBox.Width = 44; $iconBox.Height = 44; $iconBox.CornerRadius = 10
-        $iconBox.BorderBrush = Get-Brush '#1D5A78'; $iconBox.BorderThickness = 1
-        $iconBox.HorizontalAlignment = 'Left'
-        $iconBox.Child = (New-Icon -Name $cat.Icon -Size 22 -Color $script:Colors.accent)
-        [void]$sp.Children.Add($iconBox)
-        [void]$sp.Children.Add((New-Text $cat.LongTitle -Size 19 -Weight SemiBold -Margin '0,14,0,6'))
-        [void]$sp.Children.Add((New-Text $cat.Tiles -Color $script:Colors.muted -Wrap))
-        if ($cat.ComingSoon) { $foot = 'Coming soon' ; $fc = $script:Colors.dim }
-        else { $foot = ('{0} tools  >' -f @($cat.Tools | Where-Object { -not $_.Hidden }).Count); $fc = $script:Colors.accent }
-        [void]$sp.Children.Add((New-Text $foot -Size 12 -Color $fc -Mono -Margin '0,16,0,0'))
-        $b.Content = $sp
-        $b.Add_Click({ Show-Page $this.Uid })
-        [void]$wrap.Children.Add($b)
-    }
-    [void]$script:UI.PagePanel.Children.Add($wrap)
-    if (-not $script:IsAdmin) {
-        [void]$script:UI.PagePanel.Children.Add((New-Text 'Not running as administrator. Most repairs need admin rights: close this window and start TechTools again with "Run as administrator".' -Color $script:Colors.warn -Wrap -Margin '0,10,0,0'))
-    }
 }
 
 function New-Card {
@@ -355,6 +326,9 @@ function Render-Category {
         $bar.Child = $tw
         [void]$p.Children.Add($bar)
     }
+
+    # Dental: program pages instead of the checklist (Practice Management, Imaging)
+    if ($Cat.Id -eq 'dental' -and ($current -eq 'pm' -or $current -eq 'img')) { Render-Dental $current; return }
 
     # Live status panel (Internet)
     if ($Cat.StatusPanel) {
@@ -1802,12 +1776,14 @@ function Update-ActionCenter {
 }
 
 function Complete-FinishedJobs {
+    $pageChanged = $false
     $statusChanged = $false
     $healthChanged = $false
     $serverChanged = $false
     foreach ($j in $script:Sync.Jobs.ToArray()) {
         if ($j.Handled -or ($j.Status -ne 'done' -and $j.Status -ne 'failed')) { continue }
         $j.Handled = $true
+        try { if (Complete-PageJob $j) { $pageChanged = $true } } catch { Add-ConsoleLine ('UI error: ' + $_.Exception.Message) 'fail' }
         if ($j.Status -eq 'done' -and $j.Restart) {
             $script:State.RestartNeeded = $true
             if ($script:State.RestartWhy -notcontains $j.Name) { [void]$script:State.RestartWhy.Add($j.Name) }
@@ -1842,6 +1818,7 @@ function Complete-FinishedJobs {
     if ($statusChanged) { Render-Status }
     if ($healthChanged -and $script:HealthHost) { Render-Health }
     if ($serverChanged -and $script:ServerHost) { Render-Server }
+    if ($pageChanged -and ($script:State.Page -eq 'home' -or $script:State.Page -eq 'dental')) { Render-Page }
     Update-RestartBanner
 }
 
@@ -1871,6 +1848,9 @@ function Invoke-Tick {
         }
     } catch { Add-ConsoleLine ('UI error: ' + $_.Exception.Message) 'fail' }
 }
+
+# Home page and Dental program pages
+. (Join-Path $PSScriptRoot 'TechTools.Pages.ps1')
 
 # ------------------------------------------------------------ wire up UI ---
 try { $script:UI.LogoPath.Data = [Windows.Media.Geometry]::Parse(([System.IO.File]::ReadAllText((Join-Path $PSScriptRoot 'logo.path.txt'))).Trim()) } catch { }
@@ -1994,6 +1974,37 @@ if ($SmokeTest) {
     if ($script:UI.JobList.Items.Count -ne $jobs.Count) { Write-Host 'FAIL job list did not render'; $errors++ }
     $script:Window.Content.Measure((New-Object Windows.Size 1440, 900))
     $script:Window.Content.Arrange((New-Object Windows.Rect 0, 0, 1440, 900))
+    # Home: PC at a glance with sample values, then the Dental program pages
+    $script:Glance = [pscustomobject]@{ Pc = 'TEST-PC'; User = 'TEST\user'; Os = 'Windows 11 Pro'; Build = '26100'; Model = 'Test PC'; UptimeDays = 19; LastBoot = (Get-Date).AddDays(-19)
+        MemGB = 16; MemPct = 92; CTotalGB = 475; CFreeGB = 20; CPct = 96; Adapter = 'Ethernet'; IPv4 = '192.168.1.42'; Speed = '1 Gbps'; Domain = 'WORKGROUP'; OnDomain = $false
+        Antivirus = @([pscustomobject]@{ Name = 'Test AV'; On = $false; Current = $true }); RebootWhy = @('Windows Update'); At = (Get-Date) }
+    $script:Dental.Found = @{ dentrix = 'G7.4'; dexis10 = '10.4' }
+    $script:Dental.ScanAt = Get-Date
+    Show-Page 'home'
+    if ($script:UI.PagePanel.Children.Count -lt 6) { Write-Host 'FAIL home page did not render'; $errors++ }
+    $script:State.Tab['dental'] = 'pm'; $script:Dental.Open = ''
+    Show-Page 'dental'
+    $gridCount = $script:UI.PagePanel.Children.Count
+    if ($gridCount -lt 6) { Write-Host 'FAIL dental program list did not render'; $errors++ }
+    $script:Dental.Checks['opendental'] = [pscustomobject]@{ Id = 'opendental'; At = (Get-Date); Checks = @(
+        [pscustomobject]@{ Name = 'Installed'; Level = 'fail'; Value = 'Not on this PC'; Detail = 'x'; Fix = 'setup' },
+        [pscustomobject]@{ Name = 'Client config'; Level = 'warn'; Value = 'Points at localhost'; Detail = 'x'; Fix = 'point' }) }
+    foreach ($pid2 in @('opendental', 'eaglesoft', 'dentrix', 'practiceworks', 'carestack', 'tdo')) {
+        $script:Dental.Open = $pid2; Render-Page
+        if ($script:UI.PagePanel.Children.Count -lt 3) { Write-Host ('FAIL program page did not render: ' + $pid2); $errors++ }
+    }
+    $script:State.Tab['dental'] = 'img'; $script:Dental.Open = ''
+    $script:Dental.Sensor = [pscustomobject]@{ At = (Get-Date); Rows = @([pscustomobject]@{ Name = 'USB device'; Level = 'ok'; Detail = 'Test sensor'; Fix = '' },
+        [pscustomobject]@{ Name = 'USB selective suspend'; Level = 'warn'; Detail = 'On'; Fix = 'usb' }) }
+    Render-Page
+    if ($script:UI.PagePanel.Children.Count -lt 6) { Write-Host 'FAIL imaging page did not render'; $errors++ }
+    foreach ($pid2 in @('dexis9', 'dexis10', 'dtxstudio', 'xvweb', 'csimaging', 'sidexis4')) {
+        $script:Dental.Open = $pid2; Render-Page
+        if ($script:UI.PagePanel.Children.Count -lt 3) { Write-Host ('FAIL program page did not render: ' + $pid2); $errors++ }
+    }
+    $script:Dental.Open = ''; $script:State.Tab['dental'] = '3p'; $script:State.Page = 'home'
+    $script:Window.Content.Measure((New-Object Windows.Size 1440, 900))
+    $script:Window.Content.Arrange((New-Object Windows.Rect 0, 0, 1440, 900))
     # Startup password window builds, and the shipped password file is valid
     $lock = New-LockDialog 'Wrong password. 4 tries left.'
     if (-not $lock.Box -or $lock.Panel.Children.Count -lt 3) { Write-Host 'FAIL password window did not build'; $errors++ }
@@ -2008,6 +2019,9 @@ if ($SmokeTest) {
 # Ask for the team password before anything runs or the window shows.
 if (-not (Request-TeamPassword)) { exit }
 Add-ConsoleLine 'Unlocked with the team password' 'muted'
+Start-Glance
+Start-DentalScan
+Render-Page
 # From here on, a problem in one click must not close the whole window.
 $ErrorActionPreference = 'Continue'
 $script:Window.Dispatcher.Add_UnhandledException({
