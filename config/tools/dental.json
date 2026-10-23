@@ -1,9 +1,18 @@
 {
   "category": "dental",
   "sharedFile": [
-    "scripts/common/installer.ps1"
+    "scripts/common/installer.ps1",
+    "scripts/dental/_dental.ps1"
   ],
   "tabs": [
+    {
+      "id": "pm",
+      "title": "Practice Management"
+    },
+    {
+      "id": "img",
+      "title": "Imaging"
+    },
     {
       "id": "3p",
       "title": "3rd Party Apps"
@@ -23,6 +32,51 @@
         "text": "The installer asks for this password:",
         "copy": "YP9RQH"
       }
+    },
+    {
+      "id": "dscan",
+      "type": "quick",
+      "tab": "pm",
+      "hidden": true,
+      "label": "Scan for dental software",
+      "effect": "dscan",
+      "scriptFile": "scripts/dental/scan.ps1"
+    },
+    {
+      "id": "dcheck",
+      "type": "quick",
+      "tab": "pm",
+      "hidden": true,
+      "label": "Check dental program",
+      "effect": "dcheck",
+      "scriptFile": "scripts/dental/check.ps1"
+    },
+    {
+      "id": "dfix",
+      "type": "quick",
+      "tab": "pm",
+      "hidden": true,
+      "label": "Dental fix",
+      "effect": "dfix",
+      "scriptFile": "scripts/dental/fix.ps1"
+    },
+    {
+      "id": "dsensor",
+      "type": "quick",
+      "tab": "pm",
+      "hidden": true,
+      "label": "X-ray sensor check",
+      "effect": "dsensor",
+      "scriptFile": "scripts/dental/sensor.ps1"
+    },
+    {
+      "id": "dusbfix",
+      "type": "quick",
+      "tab": "pm",
+      "hidden": true,
+      "label": "Turn off USB power saving",
+      "effect": "dusbfix",
+      "scriptFile": "scripts/dental/usbfix.ps1"
     }
   ]
 }

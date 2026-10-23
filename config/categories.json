@@ -13,8 +13,8 @@
       "id": "dental",
       "title": "Dental",
       "longTitle": "Dental Programs",
-      "blurb": "Practice-management systems, imaging, third-party apps and workstation prep.",
-      "tiles": "3rd Party Apps - more coming: Practice Management, Imaging, Workstation Prep",
+      "blurb": "Practice-management and imaging software: what is installed, status checks and program fixes. Plus third-party apps.",
+      "tiles": "Practice Management - Imaging - 3rd Party Apps",
       "icon": "dental",
       "file": "tools/dental.json"
     },

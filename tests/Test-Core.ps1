@@ -337,6 +337,46 @@ $haloFile2 = Join-Path ([System.IO.Path]::GetTempPath()) ('tt-halo2-' + [guid]::
 Remove-Item $haloFile2 -Force -ErrorAction SilentlyContinue
 Check 'Halo attachment tries other formats until one works' ((@($haloCalls2 | Where-Object { $_ -like 'ATT *' }).Count -eq 3) -and ($haloCalls2 -contains 'INFO Halo took attachment format 3') -and -not (@($haloCalls2 | Where-Object { $_ -like 'WARN*' }).Count))
 
+Write-Host 'Dental programs'
+$dentalDoc = Read-TTJson (Join-Path $root 'config/dental/programs.json')
+$dprogs = @($dentalDoc.programs)
+$fixTypes = @('porttest', 'sharetest', 'odconfig', 'perm', 'firewall', 'setup', 'services', 'usbpower', 'sensorreset', 'openurl', 'shortcut')
+$fixScript = [System.IO.File]::ReadAllText((Join-Path $root 'config/scripts/dental/fix.ps1'))
+$seen = @{}; $badProg = @()
+foreach ($p in $dprogs) {
+    if (-not $p.id -or $seen[$p.id] -or -not $p.name -or @('pm', 'cloud', 'img', 'imgcloud') -notcontains $p.kind) { $badProg += [string]$p.id }
+    $seen[$p.id] = $true
+    foreach ($f in @($p.fixes)) { if ($fixTypes -notcontains $f.type -or -not $f.label -or $fixScript -notmatch ("'" + $f.type + "'")) { $badProg += ($p.id + '/' + $f.id) } }
+    if ($p.match) { try { [void]('x' -match $p.match) } catch { $badProg += ($p.id + ' match') } }
+}
+Check 'programs.json entries are valid' ($badProg.Count -eq 0) ($badProg -join ', ')
+foreach ($id in @('opendental', 'eaglesoft', 'dentrix', 'practiceworks', 'dexis9', 'dexis10', 'dtxstudio', 'xvweb', 'csimaging')) {
+    Check "main program listed: $id" (@($dprogs | Where-Object { $_.id -eq $id -and $_.main }).Count -eq 1)
+}
+Check 'programs.json is ASCII' (([System.IO.File]::ReadAllText((Join-Path $root 'config/dental/programs.json'))) -notmatch '[^\x00-\x7F]')
+. (Join-Path $root 'config/scripts/dental/_dental.ps1')
+$fakeApps = @([pscustomobject]@{ Name = 'Dentrix Ascend Imaging Bridge'; Version = '1.0' }, [pscustomobject]@{ Name = 'DEXIS'; Version = '10.4.2' },
+    [pscustomobject]@{ Name = 'Open Dental'; Version = '24.3.10.0' })
+$pd = { param($id) @($dprogs | Where-Object { $_.id -eq $id })[0] }
+Check 'finds Open Dental with its version' ((Find-TTProgram (& $pd 'opendental') $fakeApps) -eq '24.3.10.0')
+Check 'Dentrix Ascend is not Dentrix' (-not (Find-TTProgram (& $pd 'dentrix') $fakeApps))
+Check 'DEXIS 10 found by version' ((Find-TTProgram (& $pd 'dexis10') $fakeApps) -eq '10.4.2')
+Check 'DEXIS 10 is not DEXIS 9' (-not (Find-TTProgram (& $pd 'dexis9') $fakeApps))
+$dcat = $catalog | Where-Object { $_.Id -eq 'dental' }
+$dsync = New-TTSync
+$scanJob = New-TTJob -Category $dcat -Tool (@($dcat.Tools | Where-Object { $_.Id -eq 'dscan' })[0])
+$scanJob.Input = @{ Programs = @(@{ id = 'opendental'; name = 'Open Dental'; match = '^Open Dental'; verMatch = ''; folder = '' }) }
+$cloudJob = New-TTJob -Category $dcat -Tool (@($dcat.Tools | Where-Object { $_.Id -eq 'dcheck' })[0])
+$cloudJob.Input = @{ Program = (& $pd 'carestack'); Server = ''; Share = ''; Url = '' }
+$fixJob = New-TTJob -Category $dcat -Tool (@($dcat.Tools | Where-Object { $_.Id -eq 'dfix' })[0])
+$fixJob.Input = @{ Program = (& $pd 'eaglesoft'); Fix = @((& $pd 'eaglesoft').fixes | Where-Object { $_.id -eq 'test' })[0]; Server = ''; Share = 'DATA'; Url = '' }
+foreach ($j in @($scanJob, $cloudJob, $fixJob)) { [void]$dsync.Jobs.Add($j) }
+Invoke-TTJobsNow -Sync $dsync
+Check 'dental scan job runs' ($scanJob.Status -eq 'done' -and $null -ne $scanJob.Result -and $null -ne $scanJob.Result.Found) $scanJob.Error
+Check 'cloud program check asks for the login address' ($cloudJob.Status -eq 'done' -and @($cloudJob.Result.Checks | Where-Object { $_.Name -eq 'Login address' -and $_.Level -eq 'warn' }).Count -eq 1) $cloudJob.Error
+Check 'fix without a server name fails with a clear message' ($fixJob.Status -eq 'failed' -and $fixJob.Error -match 'server name')
+Check 'dental job input cleared after run' ($null -eq $scanJob.Input -and $null -eq $fixJob.Input)
+
 Write-Host ''
 if ($failures.Count -gt 0) { Write-Host "$($failures.Count) check(s) failed" -ForegroundColor Red; exit 1 }
 Write-Host 'All checks passed' -ForegroundColor Green

@@ -61,6 +61,18 @@
       "icon": "printerx"
     },
     {
+      "id": "cleanup",
+      "type": "quick",
+      "tab": "diag",
+      "label": "Free up space on C:",
+      "cmd": "Temp files, Windows Update download cache",
+      "effect": "cleanup",
+      "info": "Deletes temp files older than a day (Windows and every user profile) and the Windows Update download cache. Does not touch documents, downloads or the recycle bin.",
+      "scriptFile": "scripts/windows/cleanup.ps1",
+      "group": "Fixes (change the PC)",
+      "icon": "trash"
+    },
+    {
       "id": "crashes",
       "type": "quick",
       "tab": "diag",
@@ -138,6 +150,16 @@
       "label": "Send report to HaloPSA ticket",
       "info": "Adds a private note with the report summary to a HaloPSA ticket and attaches the report.",
       "scriptFile": "scripts/common/halo.ps1"
+    },
+    {
+      "id": "pcglance",
+      "type": "quick",
+      "tab": "diag",
+      "hidden": true,
+      "label": "Read PC status",
+      "cmd": "Uptime, C:, memory, network, antivirus",
+      "effect": "pcglance",
+      "scriptFile": "scripts/windows/glance.ps1"
     }
   ]
 }

@@ -1,0 +1,1527 @@
+{
+  "comment": "Dental programs for Dental > Practice Management and Imaging. Public info is marked (confirm) until MAV checks it. No client names, passwords or license keys here (public repo).",
+  "programs": [
+    {
+      "id": "opendental",
+      "name": "Open Dental",
+      "vendor": "Open Dental Software",
+      "kind": "pm",
+      "main": true,
+      "match": "^Open Dental",
+      "folder": "C:\\Program Files (x86)\\Open Dental",
+      "share": "OpenDentImages",
+      "shareHint": "OpenDentImages",
+      "port": 3306,
+      "about": "On-site server runs MySQL/MariaDB. Each workstation runs the Open Dental client, which reads FreeDentalConfig.xml to find the server, and saves images to the shared A to Z folder.",
+      "facts": [
+        [
+          "Client folder",
+          "C:\\Program Files (x86)\\Open Dental"
+        ],
+        [
+          "Server setting",
+          "FreeDentalConfig.xml (in the client folder)"
+        ],
+        [
+          "Database",
+          "MySQL / MariaDB, port 3306, database \"opendental\""
+        ],
+        [
+          "Images",
+          "\\\\<server>\\<share> (A to Z folder)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "503-363-5432"
+        ],
+        [
+          "Manual",
+          "opendental.com/manual"
+        ]
+      ],
+      "note": "All Open Dental details confirmed by MAV.",
+      "confirmed": true,
+      "odconfig": true,
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> -Port 3306",
+          "info": "Checks this PC can reach the Open Dental database on the server.",
+          "port": 3306
+        },
+        {
+          "id": "point",
+          "type": "odconfig",
+          "label": "Point this PC at the server",
+          "cmd": "FreeDentalConfig.xml: ComputerName = <server>",
+          "info": "Sets the server name in FreeDentalConfig.xml so the client opens the right database. Keeps a backup of the old file."
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the Open Dental workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "fw",
+          "type": "firewall",
+          "label": "Allow Open Dental through Windows Firewall",
+          "cmd": "Allow the programs in the client folder (Domain, Private)",
+          "info": "Adds Windows Firewall rules for the Open Dental programs on this PC."
+        }
+      ]
+    },
+    {
+      "id": "eaglesoft",
+      "name": "Eaglesoft",
+      "vendor": "Patterson Dental",
+      "kind": "pm",
+      "main": true,
+      "match": "Eaglesoft",
+      "folder": "C:\\EagleSoft",
+      "share": "DATA",
+      "shareHint": "DATA or Eaglesoft",
+      "port": 2638,
+      "perm": "C:\\EagleSoft",
+      "about": "On-site server runs the Eaglesoft database (SAP SQL Anywhere). Workstations install the client from the server share.",
+      "facts": [
+        [
+          "Client folder",
+          "C:\\EagleSoft"
+        ],
+        [
+          "Database",
+          "SQL Anywhere on the server, port 2638"
+        ],
+        [
+          "Server share",
+          "\\\\<server>\\<share> (share is DATA or Eaglesoft)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "800-294-8504 (confirm)"
+        ],
+        [
+          "Web",
+          "pattersondental.com"
+        ]
+      ],
+      "note": "Client folder and database confirmed by MAV. Support phone still to confirm.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> -Port 2638",
+          "info": "Checks this PC can reach the Eaglesoft database on the server.",
+          "port": 2638
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the Eaglesoft workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "perm",
+          "type": "perm",
+          "label": "Fix Eaglesoft folder permissions",
+          "cmd": "icacls C:\\EagleSoft /grant Users:(OI)(CI)M",
+          "info": "Lets non-admin users write to C:\\EagleSoft. Fixes \"access denied\" errors when Eaglesoft opens."
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "fw",
+          "type": "firewall",
+          "label": "Allow Eaglesoft through Windows Firewall",
+          "cmd": "Allow the programs in the client folder (Domain, Private)",
+          "info": "Adds Windows Firewall rules for the Eaglesoft programs on this PC."
+        }
+      ]
+    },
+    {
+      "id": "dentrix",
+      "name": "Dentrix",
+      "vendor": "Henry Schein One",
+      "kind": "pm",
+      "main": true,
+      "match": "^Dentrix(?!.*Ascend)",
+      "folder": "C:\\Program Files (x86)\\Dentrix",
+      "share": "Dentrix",
+      "shareHint": "Dentrix (confirm)",
+      "perm": "C:\\Program Files (x86)\\Dentrix",
+      "about": "On-site server holds the Dentrix database. Workstations run the Dentrix client and open the data share on the server.",
+      "facts": [
+        [
+          "Client folder",
+          "C:\\Program Files (x86)\\Dentrix"
+        ],
+        [
+          "Database",
+          "Dentrix database server on the office server (confirm service and port)"
+        ],
+        [
+          "Data share",
+          "\\\\<server>\\<share> (confirm)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "800-336-8749 (confirm)"
+        ],
+        [
+          "Web",
+          "dentrix.com/support"
+        ]
+      ],
+      "note": "Public info, not yet checked by MAV. Items marked (confirm) need your notes.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the Dentrix server. The database port is not confirmed yet, so this tests file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "perm",
+          "type": "perm",
+          "label": "Fix Dentrix folder permissions",
+          "cmd": "icacls \"C:\\Program Files (x86)\\Dentrix\" /grant Users:(OI)(CI)M",
+          "info": "Lets non-admin users write to the Dentrix folder. Fixes \"access denied\" or crashes when Dentrix opens."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the Dentrix workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "fw",
+          "type": "firewall",
+          "label": "Allow Dentrix through Windows Firewall",
+          "cmd": "Allow the programs in the client folder (Domain, Private)",
+          "info": "Adds Windows Firewall rules for the Dentrix programs on this PC."
+        }
+      ]
+    },
+    {
+      "id": "practiceworks",
+      "name": "CS PracticeWorks",
+      "vendor": "Carestream Dental",
+      "kind": "pm",
+      "main": true,
+      "match": "PracticeWorks",
+      "folder": "",
+      "share": "PracticeWorks",
+      "shareHint": "share name (confirm)",
+      "about": "On-site server holds the PracticeWorks database. Workstations install the client from the server.",
+      "facts": [
+        [
+          "Client folder",
+          "<confirm>"
+        ],
+        [
+          "Database",
+          "<confirm service and port>"
+        ],
+        [
+          "Data share",
+          "\\\\<server>\\<share> (confirm)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ],
+        [
+          "Web",
+          "carestreamdental.com"
+        ]
+      ],
+      "note": "Public info, not yet checked by MAV. Items marked (confirm) need your notes.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the PracticeWorks server over file sharing (port 445). The database port is not confirmed yet.",
+          "port": 445
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the PracticeWorks workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        }
+      ]
+    },
+    {
+      "id": "cssoftdent",
+      "name": "CS SoftDent",
+      "vendor": "On-site server",
+      "kind": "pm",
+      "main": false,
+      "match": "SoftDent",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "CS SoftDent uses an on-site server. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for CS SoftDent and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the CS SoftDent workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        }
+      ]
+    },
+    {
+      "id": "tdo",
+      "name": "TDO",
+      "vendor": "On-site server",
+      "kind": "pm",
+      "main": false,
+      "match": "^TDO",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "TDO uses an on-site server. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for TDO and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the TDO workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        }
+      ]
+    },
+    {
+      "id": "pbsendo",
+      "name": "PBS Endo",
+      "vendor": "On-site server",
+      "kind": "pm",
+      "main": false,
+      "match": "PBS Endo",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "PBS Endo uses an on-site server. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for PBS Endo and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the PBS Endo workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        }
+      ]
+    },
+    {
+      "id": "orthotrac",
+      "name": "OrthoTrac",
+      "vendor": "On-site server",
+      "kind": "pm",
+      "main": false,
+      "match": "OrthoTrac",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "OrthoTrac uses an on-site server. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for OrthoTrac and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the OrthoTrac workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        }
+      ]
+    },
+    {
+      "id": "dentrixascend",
+      "name": "Dentrix Ascend",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "Dentrix Ascend runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for Dentrix Ascend.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New Dentrix Ascend.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "archy",
+      "name": "Archy",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "Archy runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for Archy.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New Archy.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "carestack",
+      "name": "CareStack",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "CareStack runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for CareStack.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New CareStack.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "denticon",
+      "name": "Denticon",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "Denticon runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for Denticon.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New Denticon.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "oryxdental",
+      "name": "Oryx Dental",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "Oryx Dental runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for Oryx Dental.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New Oryx Dental.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "curvedental",
+      "name": "Curve Dental",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "Curve Dental runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for Curve Dental.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New Curve Dental.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "cloud9",
+      "name": "Cloud 9",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "Cloud 9 runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for Cloud 9.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New Cloud 9.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "greyfinch",
+      "name": "Greyfinch",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "Greyfinch runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for Greyfinch.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New Greyfinch.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "tdos",
+      "name": "TDOS",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "TDOS runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for TDOS.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New TDOS.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "identsoft",
+      "name": "iDentSoft",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "iDentSoft runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for iDentSoft.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New iDentSoft.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "tab32",
+      "name": "Tab32",
+      "vendor": "Cloud, runs in the browser",
+      "kind": "cloud",
+      "main": false,
+      "match": "",
+      "generic": true,
+      "about": "Tab32 runs in the browser. Save the office login address once, then use the buttons below.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send the login address format and support number for Tab32.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the login page",
+          "cmd": "start <url>",
+          "info": "Opens the saved login address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put a shortcut on every desktop",
+          "cmd": "New Tab32.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved login address for all users."
+        }
+      ]
+    },
+    {
+      "id": "dexis9",
+      "name": "DEXIS 9",
+      "vendor": "DEXIS (Envista)",
+      "kind": "img",
+      "main": true,
+      "match": "^DEXIS",
+      "verMatch": "^9",
+      "folder": "C:\\DEXIS",
+      "share": "DEXIS",
+      "shareHint": "DEXIS (confirm)",
+      "perm": "C:\\DEXIS",
+      "sensorMatch": "DEXIS|Platinum|Titanium|IXS|KaVo|Gendex",
+      "about": "Classic DEXIS. Each workstation runs DEXIS and saves images to a shared DEXIS data folder on the server.",
+      "facts": [
+        [
+          "Client folder",
+          "C:\\DEXIS (confirm)"
+        ],
+        [
+          "Settings",
+          "dexis.ini in the client folder (confirm)"
+        ],
+        [
+          "Image data",
+          "\\\\<server>\\<share> (confirm)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ],
+        [
+          "Web",
+          "dexis.com/support (confirm)"
+        ]
+      ],
+      "note": "Public info, not yet checked by MAV. Items marked (confirm) need your notes.",
+      "fixes": [
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        },
+        {
+          "id": "perm",
+          "type": "perm",
+          "label": "Fix DEXIS folder permissions",
+          "cmd": "icacls C:\\DEXIS /grant Users:(OI)(CI)M",
+          "info": "Lets non-admin users write to C:\\DEXIS."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the DEXIS 9 workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        }
+      ]
+    },
+    {
+      "id": "dexis10",
+      "name": "DEXIS 10",
+      "vendor": "DEXIS (Envista)",
+      "kind": "img",
+      "main": true,
+      "match": "^DEXIS",
+      "verMatch": "^10",
+      "folder": "",
+      "share": "DEXIS",
+      "shareHint": "DEXIS (confirm)",
+      "sensorMatch": "DEXIS|Platinum|Titanium|IXS|KaVo|Gendex",
+      "about": "Newer DEXIS. Workstations run DEXIS 10 and connect to the DEXIS server for the image database and storage.",
+      "facts": [
+        [
+          "Client folder",
+          "C:\\Program Files\\DEXIS (confirm)"
+        ],
+        [
+          "Server",
+          "DEXIS server service and database on the office server (confirm)"
+        ],
+        [
+          "Image data",
+          "\\\\<server>\\<share> (confirm)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ],
+        [
+          "Web",
+          "dexis.com/support (confirm)"
+        ]
+      ],
+      "note": "Public info, not yet checked by MAV. Items marked (confirm) need your notes.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the DEXIS server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the DEXIS server over file sharing (port 445). The DEXIS port is not confirmed yet.",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the DEXIS 10 workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        }
+      ]
+    },
+    {
+      "id": "dtxstudio",
+      "name": "DTX Studio Clinic",
+      "vendor": "Envista (DEXIS)",
+      "kind": "img",
+      "main": true,
+      "match": "DTX Studio",
+      "folder": "",
+      "share": "DTXStudio",
+      "shareHint": "share name (confirm)",
+      "sensorMatch": "DEXIS|Platinum|Titanium|IXS|KaVo|Gendex",
+      "about": "DTX Studio Clinic replaces DEXIS 10 at many offices. Workstations connect to the DTX Studio server for the database and image storage.",
+      "facts": [
+        [
+          "Client folder",
+          "<confirm>"
+        ],
+        [
+          "Server",
+          "DTX Studio server service and database (confirm)"
+        ],
+        [
+          "Image data",
+          "\\\\<server>\\<share> (confirm)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ],
+        [
+          "Web",
+          "dtxstudio.com (confirm)"
+        ]
+      ],
+      "note": "Public info, not yet checked by MAV. Items marked (confirm) need your notes.",
+      "services": [
+        "DTX*"
+      ],
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the DTX Studio server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the DTX Studio server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "svc",
+          "type": "services",
+          "label": "Restart DTX Studio services",
+          "cmd": "Restart-Service DTX*",
+          "info": "Restarts the DTX Studio services on this PC."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the DTX Studio workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        }
+      ]
+    },
+    {
+      "id": "xvweb",
+      "name": "Apteryx XVWeb",
+      "vendor": "Planet DDS, cloud",
+      "kind": "imgcloud",
+      "main": true,
+      "match": "XVWeb|Apteryx",
+      "folder": "",
+      "share": "",
+      "sensorMatch": "sensor|Schick|DEXIS|RVG|XIOS|Gendex|Suni|EzSensor|Titanium|Platinum|IXS",
+      "about": "XVWeb runs in the browser. A small capture program on each operatory PC talks to the sensor and uploads the images.",
+      "facts": [
+        [
+          "Office site",
+          "https://<office>.xvweb.net (confirm)"
+        ],
+        [
+          "Local part",
+          "Capture / acquisition agent (confirm name)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ],
+        [
+          "Web",
+          "planetdds.com (confirm)"
+        ]
+      ],
+      "note": "Public info, not yet checked by MAV. Items marked (confirm) need your notes.",
+      "fixes": [
+        {
+          "id": "open",
+          "type": "openurl",
+          "label": "Open the XVWeb site",
+          "cmd": "start <url>",
+          "info": "Opens the saved XVWeb address in the default browser."
+        },
+        {
+          "id": "shortcut",
+          "type": "shortcut",
+          "label": "Put an XVWeb shortcut on every desktop",
+          "cmd": "New Apteryx XVWeb.url on the Public desktop",
+          "info": "Creates a desktop shortcut to the saved XVWeb address for all users."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        }
+      ]
+    },
+    {
+      "id": "csimaging",
+      "name": "CS Imaging",
+      "vendor": "Carestream Dental",
+      "kind": "img",
+      "main": true,
+      "match": "CS Imaging|Carestream.*Imaging",
+      "folder": "",
+      "share": "CSImaging",
+      "shareHint": "share name (confirm)",
+      "sensorMatch": "RVG|Carestream|Kodak|CS ",
+      "about": "CS Imaging (version 8). Workstations run CS Imaging and connect to the imaging database and image folder on the server.",
+      "facts": [
+        [
+          "Client folder",
+          "<confirm>"
+        ],
+        [
+          "Database",
+          "CS Imaging database on the server (confirm service and port)"
+        ],
+        [
+          "Image data",
+          "\\\\<server>\\<share> (confirm)"
+        ]
+      ],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ],
+        [
+          "Web",
+          "carestreamdental.com"
+        ]
+      ],
+      "note": "Public info, not yet checked by MAV. Items marked (confirm) need your notes.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the imaging server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the CS Imaging server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the CS Imaging workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        }
+      ]
+    },
+    {
+      "id": "schickcdrschick33",
+      "name": "Schick (CDR / Schick 33)",
+      "vendor": "Imaging",
+      "kind": "img",
+      "main": false,
+      "match": "Schick|CDR DICOM",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "Schick (CDR / Schick 33) imaging. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for Schick (CDR / Schick 33) and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the Schick (CDR / Schick 33) workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        }
+      ],
+      "sensorMatch": "sensor|Schick|DEXIS|RVG|XIOS|Gendex|Suni|EzSensor|Planmeca|Sirona"
+    },
+    {
+      "id": "sidexis4",
+      "name": "Sidexis 4",
+      "vendor": "Imaging",
+      "kind": "img",
+      "main": false,
+      "match": "Sidexis",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "Sidexis 4 imaging. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for Sidexis 4 and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the Sidexis 4 workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        }
+      ],
+      "sensorMatch": "sensor|Schick|DEXIS|RVG|XIOS|Gendex|Suni|EzSensor|Planmeca|Sirona"
+    },
+    {
+      "id": "romexis",
+      "name": "Romexis",
+      "vendor": "Imaging",
+      "kind": "img",
+      "main": false,
+      "match": "Romexis",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "Romexis imaging. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for Romexis and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the Romexis workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        }
+      ],
+      "sensorMatch": "sensor|Schick|DEXIS|RVG|XIOS|Gendex|Suni|EzSensor|Planmeca|Sirona"
+    },
+    {
+      "id": "vixwin",
+      "name": "VixWin",
+      "vendor": "Imaging",
+      "kind": "img",
+      "main": false,
+      "match": "VixWin",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "VixWin imaging. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for VixWin and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the VixWin workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        }
+      ],
+      "sensorMatch": "sensor|Schick|DEXIS|RVG|XIOS|Gendex|Suni|EzSensor|Planmeca|Sirona"
+    },
+    {
+      "id": "xrayvision",
+      "name": "XrayVision",
+      "vendor": "Imaging",
+      "kind": "img",
+      "main": false,
+      "match": "XrayVision",
+      "folder": "",
+      "share": "DATA",
+      "shareHint": "DATA",
+      "generic": true,
+      "about": "XrayVision imaging. These are the standard fixes until MAV adds program notes.",
+      "facts": [],
+      "support": [
+        [
+          "Phone",
+          "<add from MAV notes>"
+        ]
+      ],
+      "note": "No MAV notes yet. Send services, paths, ports and the support number for XrayVision and they will be added here.",
+      "fixes": [
+        {
+          "id": "test",
+          "type": "porttest",
+          "label": "Test connection to the server",
+          "cmd": "Test-NetConnection <server> (file sharing)",
+          "info": "Checks this PC can reach the server over file sharing (port 445).",
+          "port": 445
+        },
+        {
+          "id": "share",
+          "type": "sharetest",
+          "label": "Check the data share",
+          "cmd": "Test-Path \\\\<server>\\<share>; write test",
+          "info": "Opens the share and writes a small test file, then deletes it. Fixes images or documents that will not open or save."
+        },
+        {
+          "id": "setup",
+          "type": "setup",
+          "label": "Install or update from the server",
+          "cmd": "Find the workstation setup on \\\\<server>\\<share> and start it",
+          "info": "Looks for the XrayVision workstation setup on the server share and starts it. If it cannot pick one, it opens the share so you can choose."
+        },
+        {
+          "id": "sensor",
+          "type": "sensorreset",
+          "label": "Reset the sensor (USB)",
+          "cmd": "Disable and re-enable the sensor, then rescan devices",
+          "info": "For a sensor that stopped responding or shows an error in Device Manager. Plug the sensor in first."
+        },
+        {
+          "id": "usb",
+          "type": "usbpower",
+          "label": "Stop USB power saving for sensors",
+          "cmd": "Selective suspend off; USB hubs stay powered",
+          "info": "Stops Windows from cutting power to the sensor between exposures. Fixes sensors that drop out or show as not found."
+        }
+      ],
+      "sensorMatch": "sensor|Schick|DEXIS|RVG|XIOS|Gendex|Suni|EzSensor|Planmeca|Sirona"
+    }
+  ]
+}
