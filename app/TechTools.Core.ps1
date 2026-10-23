@@ -244,11 +244,12 @@ function New-TTRestorePointJob {
     $tool = [pscustomobject]@{
         Id = '_restorepoint'; Label = 'Create system restore point'; Type = 'check'; Restart = $false; Effect = ''
         Script = (@(
-            "Write-Step 'Making sure System Restore is on for C:'",
-            "Enable-ComputerRestore -Drive ($env:SystemDrive + '\') -ErrorAction SilentlyContinue",
-            "Write-Step 'Creating restore point'",
-            "try { Checkpoint-Computer -Description 'MAV TechTools' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; Write-Info 'Restore point created' }",
-            "catch { Write-Warn ('Restore point skipped: ' + $_.Exception.Message) }"
+            # Single quotes: these lines run inside the job, so $ must not expand here.
+            'Write-Step ''Making sure System Restore is on for C:''',
+            'Enable-ComputerRestore -Drive ($env:SystemDrive + ''\'') -ErrorAction SilentlyContinue',
+            'Write-Step ''Creating restore point''',
+            'try { Checkpoint-Computer -Description ''MAV TechTools'' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; Write-Info ''Restore point created'' }',
+            'catch { Write-Warn (''Restore point skipped: '' + $_.Exception.Message) }'
         ) -join "`n")
         Options = @()
     }
