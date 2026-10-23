@@ -70,6 +70,20 @@ $script:Colors = @{
     plain = '#C9D4E3'; info = '#E6EDF5'; step = '#7DD3FC'
 }
 $script:BrushCache = @{}
+function Get-Tint {
+    # Same color with transparency, as #AARRGGBB (Alpha 0-1).
+    param([string]$Hex, [double]$Alpha)
+    if ($Hex -notmatch '^#[0-9A-Fa-f]{6}$') { return $Hex }
+    return ('#{0:X2}{1}' -f [int][math]::Round($Alpha * 255), $Hex.Substring(1))
+}
+function Get-CatColor {
+    # Each category has its own color (categories.json "color"); Home and unknown use the brand accent.
+    param([string]$Id)
+    $cat = Get-Cat $Id
+    if ($cat -and $cat.Color) { return $cat.Color }
+    return $script:Colors.accent
+}
+function Get-PageColor { return (Get-CatColor $script:State.Page) }
 function Get-Brush {
     param([string]$Hex)
     if (-not $script:BrushCache.ContainsKey($Hex)) {
@@ -211,7 +225,7 @@ function Build-Nav {
         $b.Uid = $it.Id
         $sp = New-Object Windows.Controls.StackPanel
         $sp.Orientation = 'Horizontal'
-        $ic = New-Icon -Name $it.Icon -Size 16 -Color '#A9B6C8'
+        $ic = New-Icon -Name $it.Icon -Size 16 -Color (Get-CatColor $it.Id)
         $ic.Margin = '0,0,8,0'
         [void]$sp.Children.Add($ic)
         [void]$sp.Children.Add((New-Text $it.Title -Weight SemiBold -Color '#E6EDF5'))
@@ -235,7 +249,7 @@ function Render-Page {
 function Add-PageHeader {
     param([string]$Eyebrow, [string]$Title, [string]$Blurb)
     $p = $script:UI.PagePanel
-    [void]$p.Children.Add((New-Text $Eyebrow.ToUpper() -Size 11 -Color $script:Colors.accent -Mono))
+    [void]$p.Children.Add((New-Text $Eyebrow.ToUpper() -Size 11 -Color (Get-PageColor) -Mono))
     [void]$p.Children.Add((New-Text $Title -Size 30 -Weight SemiBold -Margin '0,6,0,6'))
     if ($Blurb) { [void]$p.Children.Add((New-Text $Blurb -Size 14 -Color $script:Colors.muted -Wrap -Margin '0,0,0,18')) }
 }
@@ -298,7 +312,7 @@ function Render-Category {
             $b.Style = $script:Window.FindResource('TabBtn')
             $b.Uid = $tab.Id
             $b.Margin = '0,0,0,-1'
-            if ($tab.Id -eq $current) { $b.Tag = 'active' }
+            if ($tab.Id -eq $current) { $b.Tag = 'active'; $b.BorderBrush = Get-Brush (Get-PageColor) }
             $sp = New-Object Windows.Controls.StackPanel
             $sp.Orientation = 'Horizontal'
             $tt = New-Object Windows.Controls.TextBlock
@@ -306,12 +320,12 @@ function Render-Category {
             $tt.VerticalAlignment = 'Center'
             [void]$sp.Children.Add($tt)
             $badge = New-Object Windows.Controls.Border
-            $badge.Background = Get-Brush '#0E2A3A'
+            $badge.Background = Get-Brush (Get-Tint (Get-PageColor) 0.16)
             $badge.CornerRadius = 9
             $badge.Padding = '7,1'
             $badge.Margin = '8,0,0,0'
             $badge.Visibility = 'Collapsed'
-            $bt = New-Text '0' -Size 11 -Color $script:Colors.accent -Mono
+            $bt = New-Text '0' -Size 11 -Color (Get-PageColor) -Mono
             $badge.Child = $bt
             [void]$sp.Children.Add($badge)
             $script:TabBadges[$tab.Id] = @{ Border = $badge; Text = $bt }
@@ -370,7 +384,7 @@ function Render-Category {
             $head.BorderThickness = '0,0,0,1'
             $head.Padding = '0,0,0,4'
             $head.Margin = '0,4,0,8'
-            $head.Child = (New-Text $g -Size 14 -Weight SemiBold -Color $script:Colors.accent)
+            $head.Child = (New-Text $g -Size 14 -Weight SemiBold -Color (Get-PageColor))
             [void]$p.Children.Add($head)
             $qw = New-Object Windows.Controls.WrapPanel
             $qw.Margin = '0,0,0,8'
@@ -392,7 +406,7 @@ function Render-Category {
             if ($q.Info) { $b.ToolTip = $q.Info }
             $sp = New-Object Windows.Controls.StackPanel
             $sp.Orientation = 'Horizontal'
-            $ic = New-Icon -Name 'bolt' -Size 16 -Color $script:Colors.accent
+            $ic = New-Icon -Name 'bolt' -Size 16 -Color (Get-PageColor)
             $ic.Margin = '0,0,10,0'
             [void]$sp.Children.Add($ic)
             $tx = New-Object Windows.Controls.StackPanel
@@ -524,7 +538,7 @@ function Render-Sections {
         [Windows.Controls.DockPanel]::SetDock($cnt, 'Right')
         [void]$hd.Children.Add($cnt)
         # Section header in the accent color, underlined, so it stands apart from the tweaks
-        [void]$hd.Children.Add((New-Text $name -Size 15 -Weight SemiBold -Color $script:Colors.accent))
+        [void]$hd.Children.Add((New-Text $name -Size 15 -Weight SemiBold -Color (Get-PageColor)))
         $hdLine = New-Object Windows.Controls.Border
         $hdLine.BorderBrush = Get-Brush $script:Colors.line; $hdLine.BorderThickness = '0,0,0,1'
         $hdLine.Padding = '0,0,0,8'; $hdLine.Margin = '0,0,0,6'; $hdLine.Child = $hd
@@ -568,7 +582,7 @@ function Render-SidePane {
         $b.Padding = '10,8'
         $b.Margin = '0,0,0,4'
         $b.BorderThickness = '3,0,0,0'
-        if ($active) { $b.Background = Get-Brush '#12324A'; $b.BorderBrush = Get-Brush $script:Colors.accent }
+        if ($active) { $b.Background = Get-Brush (Get-Tint (Get-PageColor) 0.14); $b.BorderBrush = Get-Brush (Get-PageColor) }
         else { $b.Background = Get-Brush 'Transparent'; $b.BorderBrush = Get-Brush 'Transparent' }
         $row = New-Object Windows.Controls.DockPanel
         $cnt = New-Text '' -Size 11 -Color $script:Colors.muted -Mono
@@ -596,7 +610,7 @@ function Render-SidePane {
     $cnt.VerticalAlignment = 'Center'
     [Windows.Controls.DockPanel]::SetDock($cnt, 'Right')
     [void]$hd.Children.Add($cnt)
-    [void]$hd.Children.Add((New-Text $chosen -Size 16 -Weight SemiBold -Color $script:Colors.accent))
+    [void]$hd.Children.Add((New-Text $chosen -Size 16 -Weight SemiBold -Color (Get-PageColor)))
     $hdLine = New-Object Windows.Controls.Border
     $hdLine.BorderBrush = Get-Brush $script:Colors.line; $hdLine.BorderThickness = '0,0,0,1'
     $hdLine.Padding = '0,0,0,8'; $hdLine.Margin = '0,0,0,8'; $hdLine.Child = $hd
@@ -661,7 +675,7 @@ function New-ToolItem {
         [void]$line.Children.Add((New-Text $t.Label -Wrap))
         if ($t.Restart) {
             $chip = New-Object Windows.Controls.Border
-            $chip.BorderBrush = Get-Brush '#5A4A1F'; $chip.BorderThickness = 1; $chip.CornerRadius = 8
+            $chip.BorderBrush = Get-Brush '#8A6B1E'; $chip.BorderThickness = 1; $chip.CornerRadius = 8
             $chip.Padding = '6,0'; $chip.Margin = '8,1,0,0'; $chip.VerticalAlignment = 'Center'
             $chip.Child = (New-Text 'RESTART' -Size 9 -Color $script:Colors.warn -Mono)
             [void]$line.Children.Add($chip)
@@ -764,8 +778,8 @@ function Render-Status {
         $b = New-Card -Width 186 -Padding '12'
         $b.CornerRadius = 10
         $b.Margin = '0,0,10,10'
-        if ($c.Level -eq 'warn') { $b.BorderBrush = Get-Brush '#5A4A1F' }
-        if ($c.Level -eq 'fail') { $b.BorderBrush = Get-Brush '#5A2626' }
+        if ($c.Level -eq 'warn') { $b.BorderBrush = Get-Brush '#8A6B1E' }
+        if ($c.Level -eq 'fail') { $b.BorderBrush = Get-Brush '#8C3535' }
         $cs = New-Object Windows.Controls.StackPanel
         $lab = New-Object Windows.Controls.StackPanel
         $lab.Orientation = 'Horizontal'
@@ -794,7 +808,7 @@ function Render-Status {
         $dc = New-Card -Padding '14'
         $dc.CornerRadius = 10
         $dc.Margin = '0,4,0,0'
-        if ($diag.Problems -gt 0) { $dc.BorderBrush = Get-Brush '#5A4A1F' } else { $dc.BorderBrush = Get-Brush '#1F4D3D' }
+        if ($diag.Problems -gt 0) { $dc.BorderBrush = Get-Brush '#8A6B1E' } else { $dc.BorderBrush = Get-Brush '#1F6E52' }
         $ds = New-Object Windows.Controls.StackPanel
         $title = 'Diagnosis: no problems found'
         if ($diag.Problems -eq 1) { $title = 'Diagnosis: 1 problem found' }
@@ -868,12 +882,13 @@ function New-QuickTile {
     $box.Width = 40; $box.Height = 40
     $box.CornerRadius = 10
     $box.BorderThickness = 1
-    $box.BorderBrush = Get-Brush '#1D5A78'
-    $box.Background = Get-Brush '#0A1622'
+    $pc = Get-PageColor
+    $box.BorderBrush = Get-Brush (Get-Tint $pc 0.4)
+    $box.Background = Get-Brush (Get-Tint $pc 0.12)
     $box.Margin = '0,0,12,0'
     $icon = 'bolt'
     if ($Tool.Icon -and $script:Icons.ContainsKey($Tool.Icon)) { $icon = $Tool.Icon }
-    $ic = New-Icon -Name $icon -Size 20 -Color $script:Colors.accent
+    $ic = New-Icon -Name $icon -Size 20 -Color $pc
     $ic.HorizontalAlignment = 'Center'; $ic.VerticalAlignment = 'Center'
     $box.Child = $ic
     [Windows.Controls.DockPanel]::SetDock($box, 'Left')
@@ -1282,7 +1297,7 @@ function Render-Server {
     if ($st -and $st.Configured) { $level = $st.Level }
     $card = New-Card -Padding '18'
     $card.Margin = '0,0,0,14'
-    if ($level -eq 'fail') { $card.BorderBrush = Get-Brush '#5A2626' } elseif ($level -eq 'warn') { $card.BorderBrush = Get-Brush '#5A4A1F' }
+    if ($level -eq 'fail') { $card.BorderBrush = Get-Brush '#8C3535' } elseif ($level -eq 'warn') { $card.BorderBrush = Get-Brush '#8A6B1E' }
     $sp = New-Object Windows.Controls.StackPanel
 
     $dock = New-Object Windows.Controls.DockPanel
@@ -1376,7 +1391,7 @@ function Render-Server {
 
 # ------------------------------------------------------ PC health report ---
 $script:HealthLabel = @{ ok = 'OK'; warn = 'CHECK'; fail = 'PROBLEM'; info = 'INFO' }
-$script:HealthBorder = @{ ok = '#1F4D3D'; warn = '#5A4A1F'; fail = '#5A2626'; info = '#1E2A3B' }
+$script:HealthBorder = @{ ok = '#1F6E52'; warn = '#8A6B1E'; fail = '#8C3535'; info = '#1E2A3B' }
 
 function New-Dot {
     param([string]$Level, [double]$Size = 10)
@@ -1400,6 +1415,7 @@ function New-Chip {
     $chip.VerticalAlignment = 'Center'
     $c = $script:Colors[$Level]
     if ($Level -eq 'info') { $c = $script:Colors.muted }
+    if ($Level -ne 'info') { $chip.Background = Get-Brush (Get-Tint $c 0.14) }
     $chip.Child = (New-Text $script:HealthLabel[$Level] -Size 10 -Color $c -Mono)
     return $chip
 }
@@ -1749,8 +1765,10 @@ function Update-ActionCenter {
         }
         $border = $script:Colors.line
         if ($status -eq 'running') { $border = '#1D5A78' }
+        elseif ($status -eq 'failed') { $border = Get-Tint $script:Colors.fail 0.5 }
+        elseif ($color -eq $script:Colors.warn) { $border = Get-Tint $script:Colors.warn 0.45 }
         [void]$items.Add([pscustomobject]@{
-            Name = $j.Name; Detail = $detail; StatusText = $statusText; Color = $color; Border = $border
+            Name = $j.Name; Detail = $detail; StatusText = $statusText; Color = $color; Border = $border; ChipBg = (Get-Tint $color 0.15)
             Percent = [int]$j.Percent; PercentText = ([string][int]$j.Percent + '%')
         })
     }
@@ -1861,7 +1879,7 @@ $script:UI.PcText.Text = ($env:COMPUTERNAME + '  ' + $os).Trim()
 if (-not $script:IsAdmin) {
     $script:UI.AdminText.Text = 'Not admin'
     $script:UI.AdminText.Foreground = Get-Brush $script:Colors.fail
-    $script:UI.AdminChip.BorderBrush = Get-Brush '#5A2626'
+    $script:UI.AdminChip.BorderBrush = Get-Brush '#8C3535'
 }
 
 $script:UI.CancelBtn.Add_Click({

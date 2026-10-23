@@ -451,7 +451,7 @@
                       <Border Background="#0E1520" BorderBrush="{Binding Border}" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
                         <StackPanel>
                           <DockPanel>
-                            <Border DockPanel.Dock="Right" BorderBrush="{Binding Color}" BorderThickness="1" CornerRadius="9" Padding="8,1" VerticalAlignment="Top" Margin="8,0,0,0">
+                            <Border DockPanel.Dock="Right" BorderBrush="{Binding Color}" Background="{Binding ChipBg}" BorderThickness="1" CornerRadius="9" Padding="8,1" VerticalAlignment="Top" Margin="8,0,0,0">
                               <TextBlock Text="{Binding StatusText}" Foreground="{Binding Color}" FontFamily="Consolas" FontSize="11"/>
                             </Border>
                             <StackPanel>
