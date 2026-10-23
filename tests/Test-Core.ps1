@@ -219,6 +219,14 @@ Check 'secrets embed safely in helper scripts' ((Invoke-Expression (ConvertTo-TT
 $remap = Get-TTRemapScript @([pscustomobject]@{ Letter = 'S:'; Path = '\\OFFICE-SRV\Data' }, [pscustomobject]@{ Letter = 'bad'; Path = 'x' })
 Check 'drive remap script parses' ((Test-TTScriptSyntax ('$log = @()' + "`n" + $remap)).Count -eq 0)
 Check 'drive remap skips bad letters' ($remap -notmatch 'net use bad')
+$sn = ConvertTo-TTServerName '\\OFFICE-SRV\Data\'
+Check 'server name from \\server\share' ($sn.Server -eq 'OFFICE-SRV' -and $sn.Share -eq 'Data')
+Check 'plain server name and IP accepted' ((ConvertTo-TTServerName 'office-srv').Server -eq 'office-srv' -and (ConvertTo-TTServerName ' 192.168.1.10 ').Server -eq '192.168.1.10')
+Check 'junk server name rejected' ($null -eq (ConvertTo-TTServerName 'bad name!'))
+$nv = @('Shared resources at \\OFFICE-SRV', '', 'Share name   Type  Used as  Comment', '', '-------------------------------------------------------------------------------', 'ADMIN$       Disk           Remote Admin', 'C$           Disk           Default share', 'Data         Disk  S:', 'Eaglesoft    Disk           Practice data', 'IPC$         IPC            Remote IPC', 'Front Printer Print          HP', 'Open Dental Images  Disk           A to Z', 'The command completed successfully.')
+$ns = @(ConvertFrom-TTNetView $nv)
+Check 'net view parsed to disk shares only' (($ns.Name -join '|') -eq 'Data|Eaglesoft|Open Dental Images') (($ns.Name -join '|'))
+Check 'share comment kept, drive letter dropped' ((@($ns | Where-Object { $_.Name -eq 'Eaglesoft' })[0].Comment -eq 'Practice data') -and (@($ns | Where-Object { $_.Name -eq 'Data' })[0].Comment -eq ''))
 
 # On Windows, run the read-only checks for real (skips speed test and Windows Update, which are slow).
 if ($env:OS -eq 'Windows_NT') {

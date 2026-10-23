@@ -394,17 +394,8 @@
       "tab": "tools",
       "label": "Run speed test",
       "cmd": "speedtest (Ookla CLI)",
-      "script": [
-        "Write-Step 'Finding Speedtest CLI'",
-        "$exe = $null",
-        "$cmd = Get-Command speedtest.exe -ErrorAction SilentlyContinue",
-        "if ($cmd) { $exe = $cmd.Source }",
-        "if (-not $exe) { foreach ($dir in @((Join-Path $env:LOCALAPPDATA 'Microsoft\\WinGet'), (Join-Path $env:ProgramFiles 'WinGet'))) { if (-not $exe -and (Test-Path $dir)) { $exe = Get-ChildItem -Path $dir -Recurse -Filter speedtest.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName } } }",
-        "if (-not $exe) { throw 'Speedtest CLI is not installed. Check it under Install tools and run it first.' }",
-        "Write-Step 'Running speed test (about 30 seconds)'",
-        "& $exe --accept-license --accept-gdpr",
-        "Assert-TTExit 'speedtest'"
-      ]
+      "scriptFile": "scripts/internet/speedtest.ps1",
+      "info": "Runs the Ookla speed test. Installs Speedtest CLI with winget the first time (about 20 seconds)."
     },
     {
       "id": "pinggw",
@@ -492,14 +483,6 @@
         "[System.IO.File]::WriteAllLines($path, $out.ToArray())",
         "Write-Info ('Saved ' + $path)"
       ]
-    },
-    {
-      "id": "w_speedtest",
-      "type": "winget",
-      "tab": "tools",
-      "section": "Install tools (winget)",
-      "label": "Speedtest CLI",
-      "package": "Ookla.Speedtest.CLI"
     },
     {
       "id": "w_ipscanner",

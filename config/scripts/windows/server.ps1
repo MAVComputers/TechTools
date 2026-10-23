@@ -282,3 +282,72 @@ function Get-TTRemapScript {
     }
     return ($lines -join "`r`n")
 }
+
+# ---- Set up server: find the shares on a server by name
+
+function ConvertTo-TTServerName {
+    # 'OFFICE-SRV', '\\OFFICE-SRV' or '\\OFFICE-SRV\Data' -> Server + Share (may be '').
+    param([string]$Text)
+    $t = ([string]$Text).Trim().Trim('"').TrimEnd('\')
+    $t = $t -replace '^\\\\', '' -replace '/', '\'
+    $parts = $t -split '\\'
+    $server = $parts[0]
+    if ($server -notmatch '^[A-Za-z0-9][A-Za-z0-9.\-_]*$') { return $null }
+    $share = ''
+    if ($parts.Count -gt 1) { $share = $parts[1] }
+    [pscustomobject]@{ Server = $server; Share = $share }
+}
+
+function ConvertFrom-TTNetView {
+    # Parses 'net view \\server /all' into share names (disk shares only).
+    param([string[]]$Lines)
+    $shares = New-Object System.Collections.ArrayList
+    $inTable = $false
+    foreach ($l in $Lines) {
+        if ($l -match '^-{10,}') { $inTable = $true; continue }
+        if (-not $inTable -or -not $l.Trim()) { continue }
+        if ($l -match '^(The command|Der Befehl|La commande|El comando)') { break }
+        if ($l -match '^(.+?)\s+(Disk|Print|IPC|Datentr\S*|Drucker|Disque|Imprim\S*)(\s+(.*))?$' -or $l -match '^(.+?)\s{2,}(\S+)(\s+(.*))?$') {
+            $name = $Matches[1].Trim(); $type = $Matches[2]; $rest = ([string]$Matches[4]).Trim()
+            if ($type -match '^(Print|IPC|Drucker|Imprimer)') { continue }
+            if ($name -match '\$$') { continue }
+            $comment = ($rest -replace '^[A-Za-z]:(\s+|$)', '').Trim()
+            [void]$shares.Add([pscustomobject]@{ Name = $name; Comment = $comment })
+        }
+    }
+    return @($shares)
+}
+
+function Get-TTServerShares {
+    # Returns @{ Kind = ok|auth|reach|other; Message; Shares }
+    param([string]$Server)
+    $out = @(& net.exe view ('\\' + $Server) /all 2>&1 | ForEach-Object { [string]$_ })
+    $code = $LASTEXITCODE
+    $global:LASTEXITCODE = 0
+    $text = ($out -join ' ')
+    if ($code -eq 0) {
+        $s = @(ConvertFrom-TTNetView $out)
+        return [pscustomobject]@{ Kind = 'ok'; Message = ''; Shares = $s }
+    }
+    $kind = 'other'
+    if ($text -match 'error (5|86|1326|1327|1330|1331|1907|2242)\b|access is denied|logon failure|password') { $kind = 'auth' }
+    elseif ($text -match 'error (53|67|1231|1232|64)\b|network path was not found|network name') { $kind = 'reach' }
+    return [pscustomobject]@{ Kind = $kind; Message = (($out | Where-Object { $_.Trim() }) -join ' ').Trim(); Shares = @() }
+}
+
+function Save-TTServerLogin {
+    # Saves a tested login in Credential Manager for the person signed in at the PC.
+    param([string]$Server, [string]$User, [string]$Password)
+    $who = Get-TTConsoleUser
+    if ($who.Same) {
+        Save-TTCredential -Target $Server -User $User -Password $Password
+        Write-Info ('Saved in Credential Manager for ' + $Server)
+    } else {
+        $text = "Add-Type -TypeDefinition " + (ConvertTo-TTPsString $script:TTCredSource) + " -Language CSharp`r`n" +
+            "[TTCred]::Save(" + (ConvertTo-TTPsString $Server) + ", " + (ConvertTo-TTPsString $User) + ", " + (ConvertTo-TTPsString $Password) + ")`r`n" +
+            "[void]`$log.Add('SAVED')`r`n"
+        $out = Invoke-TTAsUser -User $who.Console -ScriptText $text
+        if ($out -notmatch 'SAVED') { throw ('Could not save the login for ' + $who.Console + '.') }
+        Write-Info ('Saved in Credential Manager for ' + $who.Console)
+    }
+}

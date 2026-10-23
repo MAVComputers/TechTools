@@ -1,5 +1,5 @@
 {
-  "version": "0.3.2",
+  "version": "0.3.3",
   "files": [
     "app/logo.path.txt",
     "app/MainWindow.xaml",
@@ -20,6 +20,7 @@
     "config/scripts/dental/sensor.ps1",
     "config/scripts/dental/usbfix.ps1",
     "config/scripts/internet/_shared.ps1",
+    "config/scripts/internet/speedtest.ps1",
     "config/scripts/windows/_shared.ps1",
     "config/scripts/windows/battery.ps1",
     "config/scripts/windows/chkdsk.ps1",
@@ -33,6 +34,7 @@
     "config/scripts/windows/printscan.ps1",
     "config/scripts/windows/repair.ps1",
     "config/scripts/windows/server.ps1",
+    "config/scripts/windows/serverbrowse.ps1",
     "config/scripts/windows/servercheck.ps1",
     "config/scripts/windows/serverreauth.ps1",
     "config/scripts/windows/sfc.ps1",
