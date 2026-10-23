@@ -3,12 +3,25 @@
   "sharedFile": [
     "scripts/windows/_shared.ps1",
     "scripts/windows/server.ps1",
-    "scripts/windows/diag.ps1"
+    "scripts/windows/diag.ps1",
+    "scripts/windows/updates.ps1"
   ],
   "tabs": [
     {
       "id": "diag",
       "title": "Diagnostics"
+    },
+    {
+      "id": "updates",
+      "title": "Updates"
+    },
+    {
+      "id": "installs",
+      "title": "Installs"
+    },
+    {
+      "id": "repair",
+      "title": "Repair"
     }
   ],
   "tools": [
@@ -160,6 +173,633 @@
       "cmd": "Uptime, C:, memory, network, antivirus",
       "effect": "pcglance",
       "scriptFile": "scripts/windows/glance.ps1"
+    },
+    {
+      "id": "wuopen",
+      "type": "quick",
+      "tab": "updates",
+      "label": "Open Windows Update",
+      "cmd": "start ms-settings:windowsupdate",
+      "info": "Opens Settings > Windows Update on this PC.",
+      "script": [
+        "Write-Step 'Opening Settings > Windows Update'",
+        "Start-Process 'ms-settings:windowsupdate'"
+      ],
+      "icon": "refresh"
+    },
+    {
+      "id": "wuhistory",
+      "type": "quick",
+      "tab": "updates",
+      "label": "Recent update history",
+      "cmd": "Last 15 updates and whether they installed",
+      "info": "Read-only. Lists the last 15 Windows updates in the console, with failures marked.",
+      "scriptFile": "scripts/windows/wuhistory.ps1",
+      "icon": "list"
+    },
+    {
+      "id": "wuinstall",
+      "type": "check",
+      "tab": "updates",
+      "section": "Update Now",
+      "label": "Check for and install Windows updates",
+      "cmd": "Windows Update Agent: search, download, install (no drivers)",
+      "info": "Uses Windows Update built into Windows. Does not restart the PC; a restart notice shows when one is needed. Can take 10-60 minutes.",
+      "default": true,
+      "restart": true,
+      "scriptFile": "scripts/windows/wuinstall.ps1"
+    },
+    {
+      "id": "wudrivers",
+      "type": "check",
+      "tab": "updates",
+      "section": "Update Now",
+      "label": "Install driver updates from Windows Update",
+      "cmd": "Windows Update Agent: Type=Driver",
+      "info": "Installs drivers Windows Update offers for this PC. Skip on imaging PCs where a vendor driver must stay.",
+      "restart": true,
+      "scriptFile": "scripts/windows/wudrivers.ps1"
+    },
+    {
+      "id": "wgupgrade",
+      "type": "check",
+      "tab": "updates",
+      "section": "Update Now",
+      "label": "Upgrade all winget apps",
+      "cmd": "winget upgrade --all --silent",
+      "info": "Upgrades every app winget knows about to the latest version. Apps that are open may need closing first.",
+      "default": true,
+      "scriptFile": "scripts/windows/wgupgrade.ps1"
+    },
+    {
+      "id": "defsig",
+      "type": "check",
+      "tab": "updates",
+      "section": "Update Now",
+      "label": "Update Microsoft Defender definitions",
+      "cmd": "Update-MpSignature",
+      "info": "Gets the newest virus definitions. Skipped with a warning if another antivirus has replaced Defender.",
+      "default": true,
+      "script": [
+        "Write-Step 'Updating Microsoft Defender definitions'",
+        "$st = Get-MpComputerStatus -ErrorAction SilentlyContinue",
+        "if (-not $st -or -not $st.AntivirusEnabled) { Write-Warn 'Microsoft Defender antivirus is not active on this PC (another antivirus may be in charge). Nothing to update.'; return }",
+        "Update-MpSignature -ErrorAction Stop",
+        "Write-Info ('Definitions now ' + (Get-MpComputerStatus).AntivirusSignatureVersion)"
+      ]
+    },
+    {
+      "id": "wudefer",
+      "type": "choice",
+      "tab": "updates",
+      "section": "Update Policy",
+      "label": "Feature update behavior",
+      "info": "Holding back big yearly feature updates protects practice software that is not certified on the new version yet. Security updates still install.",
+      "options": [
+        {
+          "value": "default",
+          "label": "Windows default",
+          "script": [
+            "Write-Step 'Removing feature update deferral and pause'",
+            "Remove-TTReg 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' 'DeferFeatureUpdates','DeferFeatureUpdatesPeriodInDays'",
+            "Remove-TTReg 'HKLM:\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings' 'PauseUpdatesStartTime','PauseUpdatesExpiryTime','PauseFeatureUpdatesStartTime','PauseFeatureUpdatesEndTime','PauseQualityUpdatesStartTime','PauseQualityUpdatesEndTime'"
+          ]
+        },
+        {
+          "value": "defer",
+          "label": "Delay feature updates 365 days",
+          "script": [
+            "Write-Step 'Delaying feature updates by 365 days'",
+            "Set-TTReg 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' 'DeferFeatureUpdates' 1",
+            "Set-TTReg 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate' 'DeferFeatureUpdatesPeriodInDays' 365"
+          ]
+        },
+        {
+          "value": "pause",
+          "label": "Pause all updates for 7 days",
+          "script": [
+            "Write-Step 'Pausing Windows updates for 7 days'",
+            "$from = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')",
+            "$to = (Get-Date).AddDays(7).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')",
+            "foreach ($n in 'PauseUpdatesStartTime','PauseFeatureUpdatesStartTime','PauseQualityUpdatesStartTime') { Set-TTReg 'HKLM:\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings' $n $from 'String' }",
+            "foreach ($n in 'PauseUpdatesExpiryTime','PauseFeatureUpdatesEndTime','PauseQualityUpdatesEndTime') { Set-TTReg 'HKLM:\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings' $n $to 'String' }",
+            "Write-Info ('Updates paused until ' + (Get-Date).AddDays(7).ToString('yyyy-MM-dd'))"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "activehours",
+      "type": "check",
+      "tab": "updates",
+      "section": "Update Policy",
+      "label": "Set active hours to 7 AM to 7 PM",
+      "cmd": "reg: ActiveHoursStart=7, ActiveHoursEnd=19",
+      "info": "Windows will not restart for updates during office hours.",
+      "script": [
+        "Write-Step 'Setting active hours to 7 AM - 7 PM'",
+        "Set-TTReg 'HKLM:\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings' 'SmartActiveHoursState' 0",
+        "Set-TTReg 'HKLM:\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings' 'ActiveHoursStart' 7",
+        "Set-TTReg 'HKLM:\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings' 'ActiveHoursEnd' 19"
+      ]
+    },
+    {
+      "id": "wurestart",
+      "type": "check",
+      "tab": "updates",
+      "section": "Update Policy",
+      "label": "No automatic restart while someone is signed in",
+      "cmd": "reg: WindowsUpdate\\AU NoAutoRebootWithLoggedOnUsers=1",
+      "info": "Useful on front-desk and imaging PCs that must stay up during the day.",
+      "script": [
+        "Write-Step 'Blocking automatic restarts while a user is signed in'",
+        "Set-TTReg 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU' 'NoAutoRebootWithLoggedOnUsers' 1"
+      ]
+    },
+    {
+      "id": "wuasap",
+      "type": "check",
+      "tab": "updates",
+      "section": "Update Policy",
+      "label": "Do not get updates as soon as they are released",
+      "cmd": "reg: IsContinuousInnovationOptedIn=0",
+      "info": "Turns off \"Get the latest updates as soon as they are available\", so new features arrive with the normal monthly updates.",
+      "script": [
+        "Write-Step 'Turning off early feature updates'",
+        "Set-TTReg 'HKLM:\\SOFTWARE\\Microsoft\\WindowsUpdate\\UX\\Settings' 'IsContinuousInnovationOptedIn' 0"
+      ]
+    },
+    {
+      "id": "wudo",
+      "type": "check",
+      "tab": "updates",
+      "section": "Update Policy",
+      "label": "Stop sharing updates with other PCs",
+      "cmd": "reg: DeliveryOptimization DODownloadMode=0",
+      "info": "Turns off Delivery Optimization peer sharing, so this PC only downloads from Microsoft.",
+      "script": [
+        "Write-Step 'Turning off Delivery Optimization peer sharing'",
+        "Set-TTReg 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization' 'DODownloadMode' 0"
+      ]
+    },
+    {
+      "id": "wglist",
+      "type": "quick",
+      "tab": "installs",
+      "label": "List installed apps",
+      "cmd": "winget list",
+      "info": "Read-only. Lists every installed app in the console.",
+      "scriptFile": "scripts/windows/wglist.ps1",
+      "icon": "list"
+    },
+    {
+      "id": "wgupgradeq",
+      "type": "quick",
+      "tab": "installs",
+      "label": "Upgrade all apps",
+      "cmd": "winget upgrade --all --silent",
+      "info": "Upgrades every app winget knows about to the latest version.",
+      "scriptFile": "scripts/windows/wgupgrade.ps1",
+      "icon": "refresh"
+    },
+    {
+      "id": "w_chrome",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Browsers",
+      "label": "Google Chrome",
+      "package": "Google.Chrome"
+    },
+    {
+      "id": "w_firefox",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Browsers",
+      "label": "Mozilla Firefox",
+      "package": "Mozilla.Firefox"
+    },
+    {
+      "id": "w_edge",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Browsers",
+      "label": "Microsoft Edge",
+      "package": "Microsoft.Edge"
+    },
+    {
+      "id": "w_brave",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Browsers",
+      "label": "Brave",
+      "package": "Brave.Brave"
+    },
+    {
+      "id": "w_tv",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Remote Support",
+      "label": "TeamViewer",
+      "package": "TeamViewer.TeamViewer"
+    },
+    {
+      "id": "w_anydesk",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Remote Support",
+      "label": "AnyDesk",
+      "package": "AnyDesk.AnyDesk"
+    },
+    {
+      "id": "w_rustdesk",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Remote Support",
+      "label": "RustDesk",
+      "package": "RustDesk.RustDesk"
+    },
+    {
+      "id": "w_splashtop",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Remote Support",
+      "label": "Splashtop Business",
+      "package": "Splashtop.SplashtopBusiness"
+    },
+    {
+      "id": "w_crd",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Remote Support",
+      "label": "Chrome Remote Desktop Host",
+      "package": "Google.ChromeRemoteDesktopHost"
+    },
+    {
+      "id": "w_m365",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Office & Documents",
+      "label": "Microsoft 365 Apps",
+      "package": "Microsoft.Office"
+    },
+    {
+      "id": "w_onedrive",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Office & Documents",
+      "label": "OneDrive",
+      "package": "Microsoft.OneDrive"
+    },
+    {
+      "id": "w_reader",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Office & Documents",
+      "label": "Adobe Acrobat Reader",
+      "package": "Adobe.Acrobat.Reader.64-bit"
+    },
+    {
+      "id": "w_foxit",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Office & Documents",
+      "label": "Foxit PDF Reader",
+      "package": "Foxit.FoxitReader"
+    },
+    {
+      "id": "w_libre",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Office & Documents",
+      "label": "LibreOffice",
+      "package": "TheDocumentFoundation.LibreOffice"
+    },
+    {
+      "id": "w_naps2",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Office & Documents",
+      "label": "NAPS2 (scan to PDF)",
+      "package": "Cyanfish.NAPS2"
+    },
+    {
+      "id": "w_teams",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Communication",
+      "label": "Microsoft Teams",
+      "package": "Microsoft.Teams"
+    },
+    {
+      "id": "w_zoom",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Communication",
+      "label": "Zoom",
+      "package": "Zoom.Zoom"
+    },
+    {
+      "id": "w_slack",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Communication",
+      "label": "Slack",
+      "package": "SlackTechnologies.Slack"
+    },
+    {
+      "id": "w_thunderbird",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Communication",
+      "label": "Thunderbird",
+      "package": "Mozilla.Thunderbird"
+    },
+    {
+      "id": "w_7zip",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Utilities",
+      "label": "7-Zip",
+      "package": "7zip.7zip"
+    },
+    {
+      "id": "w_npp",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Utilities",
+      "label": "Notepad++",
+      "package": "Notepad++.Notepad++"
+    },
+    {
+      "id": "w_everything",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Utilities",
+      "label": "Everything search",
+      "package": "voidtools.Everything"
+    },
+    {
+      "id": "w_treesize",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Utilities",
+      "label": "TreeSize Free",
+      "package": "JAMSoftware.TreeSize.Free"
+    },
+    {
+      "id": "w_powertoys",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Utilities",
+      "label": "PowerToys",
+      "package": "Microsoft.PowerToys"
+    },
+    {
+      "id": "w_greenshot",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Utilities",
+      "label": "Greenshot",
+      "package": "Greenshot.Greenshot"
+    },
+    {
+      "id": "w_vlc",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Utilities",
+      "label": "VLC media player",
+      "package": "VideoLAN.VLC"
+    },
+    {
+      "id": "w_pwsh",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Tech Tools",
+      "label": "PowerShell 7",
+      "package": "Microsoft.PowerShell"
+    },
+    {
+      "id": "w_wt",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Tech Tools",
+      "label": "Windows Terminal",
+      "package": "Microsoft.WindowsTerminal"
+    },
+    {
+      "id": "w_winscp",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Tech Tools",
+      "label": "WinSCP",
+      "package": "WinSCP.WinSCP"
+    },
+    {
+      "id": "w_putty",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Tech Tools",
+      "label": "PuTTY",
+      "package": "PuTTY.PuTTY"
+    },
+    {
+      "id": "w_ipscan",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Tech Tools",
+      "label": "Advanced IP Scanner",
+      "package": "Famatech.AdvancedIPScanner"
+    },
+    {
+      "id": "w_cpuz",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Tech Tools",
+      "label": "CPU-Z",
+      "package": "CPUID.CPU-Z"
+    },
+    {
+      "id": "w_hwinfo",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Tech Tools",
+      "label": "HWiNFO",
+      "package": "REALiX.HWiNFO"
+    },
+    {
+      "id": "w_cdi",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Tech Tools",
+      "label": "CrystalDiskInfo",
+      "package": "CrystalDewWorld.CrystalDiskInfo"
+    },
+    {
+      "id": "w_mbam",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Security",
+      "label": "Malwarebytes",
+      "package": "Malwarebytes.Malwarebytes"
+    },
+    {
+      "id": "w_bitwarden",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Security",
+      "label": "Bitwarden",
+      "package": "Bitwarden.Bitwarden"
+    },
+    {
+      "id": "w_keepass",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Security",
+      "label": "KeePassXC",
+      "package": "KeePassXCTeam.KeePassXC"
+    },
+    {
+      "id": "w_dotnet8",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Runtimes",
+      "label": ".NET Desktop Runtime 8",
+      "package": "Microsoft.DotNet.DesktopRuntime.8"
+    },
+    {
+      "id": "w_vcredist",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Runtimes",
+      "label": "Visual C++ 2015-2022 (x64)",
+      "package": "Microsoft.VCRedist.2015+.x64"
+    },
+    {
+      "id": "w_vcredist86",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Runtimes",
+      "label": "Visual C++ 2015-2022 (x86)",
+      "package": "Microsoft.VCRedist.2015+.x86"
+    },
+    {
+      "id": "w_webview2",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Runtimes",
+      "label": "Edge WebView2 Runtime",
+      "package": "Microsoft.EdgeWebView2Runtime"
+    },
+    {
+      "id": "w_java",
+      "type": "winget",
+      "tab": "installs",
+      "section": "Runtimes",
+      "label": "Java Runtime",
+      "package": "Oracle.JavaRuntimeEnvironment"
+    },
+    {
+      "id": "sfcitem",
+      "type": "check",
+      "tab": "repair",
+      "section": "System Files",
+      "label": "Scan and repair system files (SFC)",
+      "cmd": "sfc /scannow",
+      "info": "Finds and replaces damaged Windows files. Takes 10-20 minutes. Run DISM first if SFC cannot fix everything.",
+      "scriptFile": "scripts/windows/sfc.ps1"
+    },
+    {
+      "id": "dismitem",
+      "type": "check",
+      "tab": "repair",
+      "section": "System Files",
+      "label": "Repair the Windows image (DISM)",
+      "cmd": "DISM /Online /Cleanup-Image /RestoreHealth",
+      "info": "Repairs the store SFC copies files from. Needs internet. Takes 5-20 minutes.",
+      "scriptFile": "scripts/windows/dism.ps1"
+    },
+    {
+      "id": "chkdsk",
+      "type": "check",
+      "tab": "repair",
+      "section": "System Files",
+      "label": "Check drive C: for errors (online scan)",
+      "cmd": "chkdsk C: /scan",
+      "info": "Read-mostly scan that runs while Windows is up. Tells you if an offline repair is needed.",
+      "scriptFile": "scripts/windows/chkdsk.ps1"
+    },
+    {
+      "id": "tempitem",
+      "type": "check",
+      "tab": "repair",
+      "section": "Cleanup",
+      "label": "Free up space on C:",
+      "cmd": "Temp files, Windows Update cache, Delivery Optimization cache",
+      "info": "Deletes temp files older than a day and the update download caches. Safe; shows space freed.",
+      "default": true,
+      "scriptFile": "scripts/windows/cleanup.ps1"
+    },
+    {
+      "id": "iconcache",
+      "type": "check",
+      "tab": "repair",
+      "section": "Cleanup",
+      "label": "Rebuild icon cache",
+      "cmd": "ie4uinit.exe -show",
+      "info": "Fixes blank or wrong icons on the desktop and taskbar.",
+      "script": [
+        "Write-Step 'Rebuilding the icon cache'",
+        "& (Join-Path $env:windir 'System32\\ie4uinit.exe') -show",
+        "Write-Info 'Icon cache refreshed. Icons may flicker for a moment.'"
+      ]
+    },
+    {
+      "id": "spooler",
+      "type": "check",
+      "tab": "repair",
+      "section": "Services & Printing",
+      "label": "Clear stuck print jobs and restart spooler",
+      "cmd": "Stop Spooler, clear spool folder, start Spooler",
+      "info": "Deletes every waiting print job. Use when the queue is stuck.",
+      "script": [
+        "Write-Step 'Clearing stuck print jobs'",
+        "$s = Clear-TTPrintQueue",
+        "Write-Info $s.Summary",
+        "if ($s.Level -eq 'warn') { Write-Warn 'Some spool files were locked. Restart the PC if jobs still will not clear.' }"
+      ]
+    },
+    {
+      "id": "explorer",
+      "type": "check",
+      "tab": "repair",
+      "section": "Services & Printing",
+      "label": "Restart Windows Explorer",
+      "cmd": "Stop-Process explorer",
+      "info": "Fixes a frozen taskbar, Start menu or desktop. Open File Explorer windows close.",
+      "script": [
+        "Write-Step 'Restarting Windows Explorer'",
+        "Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue",
+        "Start-Sleep -Seconds 4",
+        "if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }",
+        "Write-Info 'Explorer restarted'"
+      ]
+    },
+    {
+      "id": "defscan",
+      "type": "check",
+      "tab": "repair",
+      "section": "Services & Printing",
+      "label": "Run Microsoft Defender quick scan",
+      "cmd": "Start-MpScan -ScanType QuickScan",
+      "info": "Takes 2-10 minutes. Threats found are listed in the console.",
+      "script": [
+        "Write-Step 'Running Microsoft Defender quick scan'",
+        "$st = Get-MpComputerStatus -ErrorAction SilentlyContinue",
+        "if (-not $st -or -not $st.AntivirusEnabled) { Write-Warn 'Microsoft Defender antivirus is not active on this PC. Use the installed antivirus instead.'; return }",
+        "Start-MpScan -ScanType QuickScan -ErrorAction Stop",
+        "$t = @(Get-MpThreatDetection -ErrorAction SilentlyContinue | Where-Object { $_.InitialDetectionTime -gt (Get-Date).AddHours(-1) })",
+        "if ($t.Count) { Write-Warn ('Threats found: ' + $t.Count + '. Open Windows Security > Protection history.') } else { Write-Info 'No threats found' }"
+      ]
     }
   ]
 }

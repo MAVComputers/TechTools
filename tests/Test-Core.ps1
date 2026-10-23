@@ -49,6 +49,15 @@ $needed = Get-ChildItem -Path (Join-Path $root 'app'), (Join-Path $root 'config'
 foreach ($n in $needed) { Check "manifest lists $n" (@($manifest.files) -contains $n) }
 foreach ($m in $manifest.files) { Check "manifest file exists: $m" (Test-Path (Join-Path $root $m)) }
 
+$win = @($catalog | Where-Object { $_.Id -eq 'windows' })[0]
+foreach ($tb in 'updates', 'installs', 'repair') {
+    Check "windows tab $tb has tools" (@($win.Tools | Where-Object { $_.Tab -eq $tb -and -not $_.Hidden }).Count -ge 3)
+}
+$wjobs = Get-TTSelectionJobs -Category $win -Sel @{ 'windows:wuinstall' = $true; 'windows:w_7zip' = $true } -Choice @{ 'windows:wudefer' = 'defer' }
+Check 'windows selection adds a restore point first' ($wjobs.Count -eq 4 -and $wjobs[0].ToolId -eq '_restorepoint') "(got $($wjobs.Count))"
+Check 'windows update job has 3 steps and asks for restart' ((@($wjobs | Where-Object { $_.ToolId -eq 'wuinstall' })[0]).Steps -eq 3 -and (@($wjobs | Where-Object { $_.ToolId -eq 'wuinstall' })[0]).Restart)
+Check 'winget ids in windows are valid' (@($win.Tools | Where-Object { $_.Type -eq 'winget' }).Count -ge 40)
+
 Write-Host 'Jobs'
 $sel = @{ 'internet:flushdns' = $true; 'internet:w_putty' = $true }
 $choice = @{ 'internet:dns' = 'cloudflare' }
