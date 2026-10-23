@@ -616,7 +616,7 @@ function Invoke-TTWatchedProcess {
         if ($n -le 0) { break }
         [void]$sb.Append($buf, 0, $n)
         # sfc writes UTF-16: drop the zero bytes so the text reads normally.
-        $tail = $sb.ToString([math]::Max(0, $sb.Length - 400), [math]::Min(400, $sb.Length)) -replace "`0", ''
+        $tail = $sb.ToString([math]::Max(0, $sb.Length - 400), [math]::Min(400, [int]$sb.Length)) -replace "`0", ''
         $m = [regex]::Matches($tail, '(\d{1,3}(?:[.,]\d)?)\s?%')
         if ($m.Count) {
             $pct = [double]($m[$m.Count - 1].Groups[1].Value -replace ',', '.')

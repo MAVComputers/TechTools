@@ -5,12 +5,12 @@ $cs = Get-CimInstance Win32_ComputerSystem
 $boot = $os.LastBootUpTime
 $up = (Get-Date) - $boot
 $memGB = [math]::Round($cs.TotalPhysicalMemory / 1GB)
-$memPct = [int](100 - (100 * $os.FreePhysicalMemory / [math]::Max(1, $os.TotalVisibleMemorySize)))
+$memPct = [int](100 - (100 * $os.FreePhysicalMemory / [math]::Max(1.0, [double]$os.TotalVisibleMemorySize)))
 $console = [string]$cs.UserName
 Write-Step 'Reading drive C:'
 $c = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
 $cTotal = [math]::Round($c.Size / 1GB); $cFree = [math]::Round($c.FreeSpace / 1GB)
-$cPct = [int](100 - (100 * $c.FreeSpace / [math]::Max(1, $c.Size)))
+$cPct = [int](100 - (100 * $c.FreeSpace / [math]::Max(1.0, [double]$c.Size)))
 Write-Step 'Reading the network'
 $adapter = ''; $ip = ''; $speed = ''
 foreach ($n in @(Get-TTNetConfigs | Where-Object { $_.NetAdapter -and $_.NetAdapter.Status -eq 'Up' -and $_.IPv4DefaultGateway })) {
