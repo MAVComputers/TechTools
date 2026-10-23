@@ -22,6 +22,9 @@ $net = $catalog | Where-Object { $_.Id -eq 'internet' }
 Check 'internet category is live' ($net -and -not $net.ComingSoon)
 Check 'internet has tools' (@($net.Tools).Count -gt 10)
 Check 'every category has its own color' (@($catalog | Where-Object { $_.Color -notmatch '^#[0-9A-Fa-f]{6}$' }).Count -eq 0 -and @($catalog.Color | Select-Object -Unique).Count -eq $catalog.Count)
+# PowerShell 5.1 picks Max(int,int) for [math]::Max(1, $x) and fails when $x is a big disk size (UInt64).
+$mathBad = @(Get-ChildItem -Path (Join-Path $root 'config/scripts') -Recurse -Filter *.ps1 | Select-String -Pattern '\[math\]::(Max|Min)\(\d+, \$[\w.]+\)')
+Check 'scripts use doubles in [math]::Max/Min with variables' ($mathBad.Count -eq 0) (($mathBad | ForEach-Object { $_.Filename + ':' + $_.LineNumber }) -join ', ')
 
 Write-Host 'Files'
 $ps1 = Get-ChildItem -Path $root -Recurse -Include *.ps1 -File | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' }
