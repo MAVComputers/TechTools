@@ -70,6 +70,9 @@ $fakeWin = [pscustomobject]@{ Id = 'win'; Title = 'W'; Shared = ''; RestorePoint
     [pscustomobject]@{ Id = 'a'; Label = 'A'; Type = 'check'; Script = "Write-Step 'x'"; Restart = $false; Effect = ''; Options = @() }) }
 $rp = Get-TTSelectionJobs -Category $fakeWin -Sel @{ 'win:a' = $true } -Choice @{}
 Check 'restore point added first when category asks' ($rp.Count -eq 2 -and $rp[0].ToolId -eq '_restorepoint')
+# Built while the UI's $_ is set (a click), so $ in its script must not expand early.
+$rpJob = & { $_ = 'CLICK'; New-TTRestorePointJob -Category $fakeWin }
+Check 'restore point script parses and keeps $_' ((Test-TTScriptSyntax $rpJob.Script).Count -eq 0 -and $rpJob.Script.Contains('$_.Exception') -and $rpJob.Script.Contains('$env:SystemDrive'))
 
 Write-Host 'Worker'
 $cat = [pscustomobject]@{ Id = 't'; Title = 'Test'; Shared = 'function Get-Two { 2 }'; RestorePoint = $false }

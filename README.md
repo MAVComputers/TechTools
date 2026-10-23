@@ -49,7 +49,7 @@ How it works on screen:
 
 1. Pick a category in the top menu, then a tab.
 2. Use a quick action, or tick options and press **Run selected**.
-   Picks stay ticked when you switch tabs and run together.
+   Picks stay ticked when you switch tabs and run together, then clear once queued.
 3. Watch the Action Center: each job shows its steps, progress and result.
    Options marked **RESTART** show a restart banner when they finish.
 
