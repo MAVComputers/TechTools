@@ -730,10 +730,43 @@ function Start-Selected {
     $cat = Get-Cat $script:State.Page
     $jobs = Get-TTSelectionJobs -Category $cat -Sel $script:State.Sel -Choice $script:State.Choice
     if ($jobs.Count -eq 0) { return }
+    if ($jobs[0].ToolId -eq '_restorepoint') {
+        $answer = Confirm-RestorePoint ($jobs.Count - 1)
+        if ($answer -eq 'cancel') { return }
+        if ($answer -eq 'skip') {
+            $jobs = @($jobs | Select-Object -Skip 1)
+            Add-ConsoleLine 'Restore point skipped for this run' 'muted'
+        } else { $script:State.RestorePointAt = Get-Date }
+    }
     Add-Jobs $jobs
     # Untick everything that was just queued so the next run does not repeat it.
     Clear-CategorySelection $cat
     Render-Sections
+}
+
+function New-RestorePointDialog {
+    # Dialog: Cancel / Skip / Create restore point. Window.Tag says which was picked.
+    param([int]$Changes)
+    $msg = ('{0} change(s) are about to run. A restore point lets you undo them with System Restore. Windows allows one restore point every 24 hours.' -f $Changes)
+    if ($script:State.RestorePointAt) { $msg += (' One was already made at {0} in this session, so you can skip it.' -f $script:State.RestorePointAt.ToString('HH:mm')) }
+    $d = New-Dialog 'Create a restore point first?' $msg 'Create restore point'
+    $w = $d.Window
+    $w.Tag = 'create'
+    $row = $w.Content.Children[$w.Content.Children.Count - 1]
+    $skip = New-Button 'Skip'
+    $skip.Margin = '0,0,8,0'
+    $skip.Tag = $w
+    $skip.Add_Click({ $this.Tag.Tag = 'skip'; $this.Tag.DialogResult = $true })
+    $row.Children.Insert(1, $skip)
+    return $w
+}
+
+function Confirm-RestorePoint {
+    # Asks before a run that changes the PC. Returns 'create', 'skip' or 'cancel'.
+    param([int]$Changes)
+    $w = New-RestorePointDialog $Changes
+    if (-not $w.ShowDialog()) { return 'cancel' }
+    return [string]$w.Tag
 }
 
 function Clear-CategorySelection {
@@ -2003,6 +2036,9 @@ if ($SmokeTest) {
     if ($script:UI.JobList.Items.Count -ne $jobs.Count) { Write-Host 'FAIL job list did not render'; $errors++ }
     Clear-CategorySelection (Get-Cat 'internet')
     if ($script:State.Sel['internet:flushdns'] -or $script:State.Choice['internet:dns']) { Write-Host 'FAIL ticks not cleared after a run'; $errors++ }
+    $rpw = New-RestorePointDialog 3
+    if (-not $rpw -or $rpw.Content.Children[$rpw.Content.Children.Count - 1].Children.Count -ne 3) { Write-Host 'FAIL restore point dialog did not build'; $errors++ }
+    if ($rpw) { $rpw.Close() }
     $script:Window.Content.Measure((New-Object Windows.Size 1440, 900))
     $script:Window.Content.Arrange((New-Object Windows.Rect 0, 0, 1440, 900))
     # Home: PC at a glance with sample values, then the Dental program pages
